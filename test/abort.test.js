@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { load } from './support/surface.js';
+import { intrinsics, load } from './support/surface.js';
 
 // AbortSignal extends EventTarget, so the event core loads with it.
 function surface() {
@@ -13,7 +13,9 @@ function surface() {
     return sandbox;
 }
 
-const { AbortController, AbortSignal, DOMException, Event } = surface();
+const box = surface();
+const { AbortController, AbortSignal, DOMException, Event } = box;
+const { Error } = intrinsics(box);
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -2,9 +2,11 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { load } from './support/surface.js';
+import { intrinsics, load } from './support/surface.js';
 
-const { Headers } = load('headers');
+const surface = load('headers');
+const { Headers } = surface;
+const { Map, TypeError } = intrinsics(surface);
 
 describe('construction', () => {
     test('is a constructor', () => {

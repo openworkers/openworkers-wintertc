@@ -23,7 +23,13 @@ through `include_str!`, so a host cannot pick up a module without picking up wha
 it needs.
 
 **`test/`** is the inner loop: the contract mocked in pure JavaScript, so the
-whole surface runs under Bun with no engine embedding at all.
+whole surface runs under Bun with no engine embedding at all. Each sandbox is a
+real `node:vm` context, so a bare `new Headers()` inside a module finds the one
+this surface installed rather than Bun's, and a module that asks for a global
+the host never installs fails here instead of in production. The cost is a realm
+boundary: an assertion about what the surface built compares against the
+sandbox's constructors, which `intrinsics()` hands back.
+
 `openworkers-conformance` stays the integration judge, with 448 tests and a
 streaming battery through a real runtime, but it is not where you want to find
 out that a signature is wrong.
@@ -37,13 +43,15 @@ cargo test    # the crate
 
 ## The modules
 
-| module    | ops it asks of its host |
-| --------- | ----------------------- |
-| `events`  | none                    |
-| `abort`   | none                    |
-| `streams` | none                    |
-| `url`     | `urlParse`, `urlUpdate` |
-| `headers` | none                    |
+| module     | ops it asks of its host |
+| ---------- | ----------------------- |
+| `events`   | none                    |
+| `abort`    | none                    |
+| `streams`  | none                    |
+| `url`      | `urlParse`, `urlUpdate` |
+| `headers`  | none                    |
+| `request`  | none                    |
+| `response` | none                    |
 
 A module may build on another, and on what the host installs around them
 (`setTimeout`, `console`, `queueMicrotask`, `ReadableStream`); `SURFACE` is the

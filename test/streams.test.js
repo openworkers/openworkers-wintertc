@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { readableStreamClass } from './mock/host.js';
-import { evaluate, sandbox } from './support/surface.js';
+import { evaluate, intrinsics, sandbox } from './support/surface.js';
 
 function surface() {
     return evaluate(
@@ -16,6 +16,7 @@ const host = surface();
 const { ReadableStream, WritableStream, TransformStream } = host;
 const { CountQueuingStrategy, ByteLengthQueuingStrategy } = host;
 const { TextEncoderStream, TextDecoderStream } = host;
+const { TypeError } = intrinsics(host);
 
 function streamOf(values) {
     return new ReadableStream({

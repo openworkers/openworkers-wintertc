@@ -6,9 +6,13 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { load } from './support/surface.js';
+import { evaluate, intrinsics, sandbox } from './support/surface.js';
 
-const { URL, URLSearchParams } = load('url');
+// The module decodes urlencoded input through the host's encoders.
+const load = (...names) => evaluate(sandbox({ TextEncoder, TextDecoder }), ...names);
+const surface = load('url');
+const { URL, URLSearchParams } = surface;
+const { TypeError } = intrinsics(surface);
 
 describe('URL', () => {
     test('exposes the components of its input', () => {
