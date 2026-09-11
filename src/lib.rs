@@ -20,6 +20,42 @@ pub struct Module {
     pub required_ops: &'static [&'static str],
 }
 
+/// Encoding Standard, `TextEncoder` and `TextDecoder`. Reads its two ops as
+/// loose globals still, so the namespace knows nothing of them yet.
+pub const TEXT_ENCODING: Module = Module {
+    name: "text-encoding",
+    source: include_str!("../js/text-encoding.js"),
+    required_ops: &[],
+};
+
+/// File API, the `Blob` and `File` interfaces.
+pub const BLOB: Module = Module {
+    name: "blob",
+    source: include_str!("../js/blob.js"),
+    required_ops: &[],
+};
+
+/// XMLHttpRequest Standard, the `FormData` interface.
+pub const FORM_DATA: Module = Module {
+    name: "form-data",
+    source: include_str!("../js/form-data.js"),
+    required_ops: &[],
+};
+
+/// HTML Standard, `structuredClone`.
+pub const STRUCTURED_CLONE: Module = Module {
+    name: "structured-clone",
+    source: include_str!("../js/structured-clone.js"),
+    required_ops: &[],
+};
+
+/// HTML Standard, `btoa` and `atob`.
+pub const BASE64: Module = Module {
+    name: "base64",
+    source: include_str!("../js/base64.js"),
+    required_ops: &[],
+};
+
 /// DOM Standard, the event core and the message channel that carries it.
 pub const EVENTS: Module = Module {
     name: "events",
@@ -71,7 +107,20 @@ pub const HEADERS: Module = Module {
 };
 
 /// Every module, in the order a host has to evaluate them.
-pub const SURFACE: &[Module] = &[EVENTS, ABORT, STREAMS, URL, HEADERS, REQUEST, RESPONSE];
+pub const SURFACE: &[Module] = &[
+    TEXT_ENCODING,
+    BLOB,
+    FORM_DATA,
+    EVENTS,
+    ABORT,
+    STREAMS,
+    STRUCTURED_CLONE,
+    BASE64,
+    URL,
+    HEADERS,
+    REQUEST,
+    RESPONSE,
+];
 
 #[cfg(test)]
 mod tests {
