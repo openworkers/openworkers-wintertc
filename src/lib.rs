@@ -36,3 +36,54 @@ pub const HEADERS: Module = Module {
 
 /// Every module, in the order a host has to evaluate them.
 pub const SURFACE: &[Module] = &[URL, HEADERS];
+
+#[cfg(test)]
+mod tests {
+    use super::NATIVE_NAMESPACE;
+    use super::SURFACE;
+
+    /// What a module reads out of the namespace, in source order.
+    fn ops_read(source: &str) -> Vec<&str> {
+        let prefix = format!("globalThis.{NATIVE_NAMESPACE}.");
+
+        source
+            .match_indices(&prefix)
+            .map(|(at, _)| {
+                let rest = &source[at + prefix.len()..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .unwrap_or(rest.len());
+
+                &rest[..end]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_declared_op_is_an_op_the_module_reads() {
+        for module in SURFACE {
+            let read = ops_read(module.source);
+
+            for op in module.required_ops {
+                assert!(
+                    read.contains(op),
+                    "module {} declares {op} and never reads it",
+                    module.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_op_the_module_reads_is_a_declared_op() {
+        for module in SURFACE {
+            for op in ops_read(module.source) {
+                assert!(
+                    module.required_ops.contains(&op),
+                    "module {} reads {op} without declaring it",
+                    module.name
+                );
+            }
+        }
+    }
+}

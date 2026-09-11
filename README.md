@@ -38,6 +38,7 @@ cargo test    # the crate
 
 | module    | ops it asks of its host |
 | --------- | ----------------------- |
+| `url`     | `urlParse`, `urlUpdate` |
 | `headers` | none                    |
 
 ## Why a module reads its ops late
@@ -51,8 +52,14 @@ call into the hole. Reading late is the only shape that serves a snapshotting
 host and an eval-at-boot host at once.
 
 The cost is that the namespace stays reachable from guest code. A host installs
-it non-enumerable and frozen, so a guest can neither find it by enumeration nor
-replace an op under the surface's feet.
+it non-enumerable, neither writable nor configurable, and freezes it once every
+op is registered, so a guest can neither find it by enumeration nor replace the
+namespace or an op under the surface's feet.
+
+A module reads it as `globalThis.__ow.<op>`, never as a bare `__ow`. The global
+belongs to the guest, and a guest's top-level `let __ow` would be a global
+lexical binding that shadows the global-object property for every bare lookup
+that follows, this surface's included.
 
 ## A module may not declare at top level
 

@@ -61,13 +61,13 @@
         return pairs;
     };
 
-    const parseUrl = (input, base) => __urlParse(
+    const parseUrl = (input, base) => globalThis.__ow.urlParse(
         String(input),
         base === undefined || base === null ? null : String(base)
     );
 
     const setPart = (url, part, value) => {
-        const next = __urlUpdate(url[STATE].href, part, String(value));
+        const next = globalThis.__ow.urlUpdate(url[STATE].href, part, String(value));
 
         if (next === null) {
             return;
@@ -88,7 +88,7 @@
             return;
         }
 
-        const next = __urlUpdate(owner[STATE].href, 'search', params.toString());
+        const next = globalThis.__ow.urlUpdate(owner[STATE].href, 'search', params.toString());
 
         if (next !== null) {
             owner[STATE] = next;
