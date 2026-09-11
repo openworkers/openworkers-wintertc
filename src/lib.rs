@@ -84,6 +84,14 @@ pub const URL: Module = Module {
     required_ops: &["urlParse", "urlUpdate"],
 };
 
+/// WinterTC Minimum Common API, `navigator`. The host is the only side that
+/// knows which runtime this is.
+pub const NAVIGATOR: Module = Module {
+    name: "navigator",
+    source: include_str!("../js/navigator.js"),
+    required_ops: &["userAgent"],
+};
+
 /// URL Pattern Standard, the `URLPattern` interface. The grammar is the host's;
 /// what is here is the matching.
 pub const URL_PATTERN: Module = Module {
@@ -118,6 +126,7 @@ pub const SURFACE: &[Module] = &[
     TEXT_ENCODING,
     BLOB,
     FORM_DATA,
+    NAVIGATOR,
     EVENTS,
     ABORT,
     STREAMS,

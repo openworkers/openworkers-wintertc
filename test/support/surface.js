@@ -19,6 +19,7 @@ export function sandbox(globals = {}) {
     const box = createContext({ setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask, ...globals });
 
     box[NATIVE_NAMESPACE] = nativeMock();
+    box[NATIVE_NAMESPACE].userAgent = 'OpenWorkers/test (mock)';
 
     return box;
 }
