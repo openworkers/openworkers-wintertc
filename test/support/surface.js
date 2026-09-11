@@ -41,5 +41,5 @@ export function load(...names) {
 // The constructors of the sandbox's own realm. An assertion about what the
 // surface built has to compare against these, not against Bun's.
 export function intrinsics(box) {
-    return runInContext('({ Error, TypeError, RangeError, Map, Uint8Array })', box);
+    return runInContext('({ Error, TypeError, RangeError, Map, Set, ArrayBuffer, Uint8Array })', box);
 }

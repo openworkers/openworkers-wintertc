@@ -3,7 +3,7 @@
 
 globalThis.Blob = class Blob {
     constructor(blobParts = [], options = {}) {
-        this.type = options.type || '';
+        this.type = String(options.type || '').toLowerCase();
         this._parts = [];
 
         for (const part of blobParts) {
@@ -31,6 +31,10 @@ globalThis.Blob = class Blob {
 
     async arrayBuffer() {
         return this._getBytes().buffer;
+    }
+
+    async bytes() {
+        return new Uint8Array(await this.arrayBuffer());
     }
 
     async text() {

@@ -10,7 +10,7 @@ globalThis.FormData = class FormData {
         if (value instanceof Blob && filename === undefined && value instanceof File) {
             filename = value.name;
         }
-        this._entries.push([String(name), value, filename]);
+        this._entries.push([String(name), value instanceof Blob ? value : String(value), filename]);
     }
 
     delete(name) {
@@ -42,7 +42,7 @@ globalThis.FormData = class FormData {
         // Remove all existing entries with this name
         this._entries = this._entries.filter(([k]) => k !== strName);
         // Add the new entry
-        this._entries.push([strName, value, filename]);
+        this._entries.push([strName, value instanceof Blob ? value : String(value), filename]);
     }
 
     *entries() {

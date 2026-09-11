@@ -19,6 +19,17 @@ function parts(url) {
 }
 
 const ops = {
+    textEncode(input) {
+        return new TextEncoder().encode(String(input));
+    },
+
+    // The host hands the bytes back as they decode, mark included: dropping the
+    // byte order mark is the module's job, and a mock that did it for free
+    // would hide whether the module does it at all.
+    textDecode(bytes, label, fatal) {
+        return new TextDecoder(label, { fatal, ignoreBOM: true }).decode(bytes);
+    },
+
     urlParse(input, base) {
         try {
             return parts(base === null ? new URL(input) : new URL(input, base));

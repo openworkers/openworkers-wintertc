@@ -20,12 +20,11 @@ pub struct Module {
     pub required_ops: &'static [&'static str],
 }
 
-/// Encoding Standard, `TextEncoder` and `TextDecoder`. Reads its two ops as
-/// loose globals still, so the namespace knows nothing of them yet.
+/// Encoding Standard, `TextEncoder` and `TextDecoder`.
 pub const TEXT_ENCODING: Module = Module {
     name: "text-encoding",
     source: include_str!("../js/text-encoding.js"),
-    required_ops: &[],
+    required_ops: &["textDecode", "textEncode"],
 };
 
 /// File API, the `Blob` and `File` interfaces.

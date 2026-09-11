@@ -1,15 +1,31 @@
 // HTML Standard, `structuredClone`.
 // https://html.spec.whatwg.org/multipage/structured-data.html
 
-globalThis.structuredClone = function(value, options) {
-    // Handle transferables (simplified - just ignore them for now)
+globalThis.structuredClone = function structuredClone(value, options) {
     const transfer = options?.transfer || [];
 
-    // Use JSON for simple cases, but handle more types
+    // A transferred buffer is detached from the caller rather than copied, so
+    // the clone is the only side holding the memory afterwards.
+    const taken = new Map();
+
+    for (const item of transfer) {
+        if (item instanceof ArrayBuffer && typeof item.transfer === 'function') {
+            taken.set(item, item.transfer());
+        }
+    }
+
     function clone(obj, seen = new Map()) {
+        if (typeof obj === 'function' || typeof obj === 'symbol') {
+            throw new DOMException(typeof obj + ' could not be cloned', 'DataCloneError');
+        }
+
         // Primitives
         if (obj === null || typeof obj !== 'object') {
             return obj;
+        }
+
+        if (taken.has(obj)) {
+            return taken.get(obj);
         }
 
         // Check for circular references
@@ -20,6 +36,16 @@ globalThis.structuredClone = function(value, options) {
         // Date
         if (obj instanceof Date) {
             return new Date(obj.getTime());
+        }
+
+        // Error
+        if (obj instanceof Error) {
+            const copy = new obj.constructor(obj.message);
+
+            copy.name = obj.name;
+            copy.stack = obj.stack;
+
+            return copy;
         }
 
         // RegExp
