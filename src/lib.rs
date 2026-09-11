@@ -49,6 +49,20 @@ pub const URL: Module = Module {
     required_ops: &["urlParse", "urlUpdate"],
 };
 
+/// Fetch Standard, the `Request` interface.
+pub const REQUEST: Module = Module {
+    name: "request",
+    source: include_str!("../js/request.js"),
+    required_ops: &[],
+};
+
+/// Fetch Standard, the `Response` interface.
+pub const RESPONSE: Module = Module {
+    name: "response",
+    source: include_str!("../js/response.js"),
+    required_ops: &[],
+};
+
 /// Fetch Standard, the `Headers` interface. Asks nothing of its host.
 pub const HEADERS: Module = Module {
     name: "headers",
@@ -57,7 +71,7 @@ pub const HEADERS: Module = Module {
 };
 
 /// Every module, in the order a host has to evaluate them.
-pub const SURFACE: &[Module] = &[EVENTS, ABORT, STREAMS, URL, HEADERS];
+pub const SURFACE: &[Module] = &[EVENTS, ABORT, STREAMS, URL, HEADERS, REQUEST, RESPONSE];
 
 #[cfg(test)]
 mod tests {
