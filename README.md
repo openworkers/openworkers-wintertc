@@ -13,8 +13,9 @@ for one gap.
 ## The three pieces
 
 **`js/`** is the surface, one classic script per API, assigning onto
-`globalThis`. It is written against the contract and the engine intrinsics, never
-against an embedding: nothing in a module knows which runtime is running it.
+`globalThis`. It is written against the contract, the engine intrinsics and the
+rest of the surface, never against an embedding: nothing in a module knows which
+runtime is running it.
 
 **`src/`** is the contract. Each module carries the ops it reads out of the
 native namespace, and the crate hands a host both the script and that list
@@ -38,8 +39,14 @@ cargo test    # the crate
 
 | module    | ops it asks of its host |
 | --------- | ----------------------- |
+| `events`  | none                    |
+| `abort`   | none                    |
 | `url`     | `urlParse`, `urlUpdate` |
 | `headers` | none                    |
+
+A module may build on another, and on what the host installs around them
+(`setTimeout`, `console`, `queueMicrotask`); `SURFACE` is the order that makes
+that true. `required_ops` covers the native namespace alone.
 
 ## Why a module reads its ops late
 
