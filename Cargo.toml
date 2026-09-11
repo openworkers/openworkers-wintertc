@@ -1,0 +1,12 @@
+[package]
+name = "openworkers-wintertc"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "The shared WinterTC web surface of the OpenWorkers runtimes, and the native contract it is written against"
+repository = "https://github.com/openworkers/openworkers-wintertc"
+
+# `test/` is the Bun corpus, of no use to a Rust consumer.
+include = ["src/**/*.rs", "js/**/*.js", "README.md", "LICENSE"]
+
+[dependencies]
