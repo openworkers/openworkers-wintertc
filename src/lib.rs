@@ -35,6 +35,13 @@ pub const ABORT: Module = Module {
     required_ops: &[],
 };
 
+/// Streams Standard, the tier that stands on the host's `ReadableStream`.
+pub const STREAMS: Module = Module {
+    name: "streams",
+    source: include_str!("../js/streams.js"),
+    required_ops: &[],
+};
+
 /// URL Standard, the `URL` and `URLSearchParams` interfaces.
 pub const URL: Module = Module {
     name: "url",
@@ -50,7 +57,7 @@ pub const HEADERS: Module = Module {
 };
 
 /// Every module, in the order a host has to evaluate them.
-pub const SURFACE: &[Module] = &[EVENTS, ABORT, URL, HEADERS];
+pub const SURFACE: &[Module] = &[EVENTS, ABORT, STREAMS, URL, HEADERS];
 
 #[cfg(test)]
 mod tests {

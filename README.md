@@ -41,12 +41,17 @@ cargo test    # the crate
 | --------- | ----------------------- |
 | `events`  | none                    |
 | `abort`   | none                    |
+| `streams` | none                    |
 | `url`     | `urlParse`, `urlUpdate` |
 | `headers` | none                    |
 
 A module may build on another, and on what the host installs around them
-(`setTimeout`, `console`, `queueMicrotask`); `SURFACE` is the order that makes
-that true. `required_ops` covers the native namespace alone.
+(`setTimeout`, `console`, `queueMicrotask`, `ReadableStream`); `SURFACE` is the
+order that makes that true. `required_ops` covers the native namespace alone.
+
+`streams` extends the prototype of the host's `ReadableStream` rather than
+replacing it: the host backs that one with its own channel, and the streaming
+battery in `openworkers-conformance` measures what happens on it.
 
 ## Why a module reads its ops late
 
