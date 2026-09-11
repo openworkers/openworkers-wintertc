@@ -18,7 +18,86 @@ function parts(url) {
     };
 }
 
+// The URLPattern grammar belongs to the host, and standing in for it here
+// would be writing the very parser the op exists to avoid. This covers the init
+// form with literal segments, `:name` and `*`, which is enough to exercise the
+// matching the module does; the grammar itself is judged by the conformance
+// suite and by the crate upstream.
+const COMPONENTS = ['protocol', 'username', 'password', 'hostname', 'port', 'pathname', 'search', 'hash'];
+
+function component(pattern) {
+    if (pattern === '*') {
+        return {
+            patternString: '*',
+            regexpString: '^(.*)$',
+            matcher: { prefix: '', suffix: '', kind: 'singleCapture', filter: null, allowEmpty: true },
+            groupNameList: ['0'],
+        };
+    }
+
+    if (!/[:*]/.test(pattern)) {
+        return {
+            patternString: pattern,
+            regexpString: '^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$',
+            matcher: { prefix: '', suffix: '', kind: 'literal', literal: pattern },
+            groupNameList: [],
+        };
+    }
+
+    const names = [];
+    const source = pattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/:([A-Za-z0-9_]+)/g, (_, name) => {
+            names.push(name);
+
+            return '([^/]+)';
+        })
+        .replace(/\*/g, '(.*)');
+
+    return {
+        patternString: pattern,
+        regexpString: '^' + source + '$',
+        matcher: { prefix: '', suffix: '', kind: 'regExp', regexp: source },
+        groupNameList: names,
+    };
+}
+
 const ops = {
+    urlPatternParse(input, base) {
+        if (typeof input === 'string' || base !== null) {
+            return null;
+        }
+
+        const parsed = { hasRegexpGroups: false };
+
+        for (const name of COMPONENTS) {
+            parsed[name] = component(input[name] === undefined ? '*' : input[name]);
+        }
+
+        return parsed;
+    },
+
+    urlPatternProcessInput(input, base) {
+        let url;
+
+        try {
+            url = base === null ? new URL(input) : new URL(input, base);
+        } catch {
+            return null;
+        }
+
+        return {
+            protocol: url.protocol.replace(/:$/, ''),
+            username: url.username,
+            password: url.password,
+            hostname: url.hostname,
+            port: url.port,
+            pathname: url.pathname,
+            search: url.search.replace(/^\?/, ''),
+            hash: url.hash.replace(/^#/, ''),
+        };
+    },
+
     textEncode(input) {
         return new TextEncoder().encode(String(input));
     },

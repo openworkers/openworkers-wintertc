@@ -49,6 +49,7 @@ cargo test    # the crate
 | `abort`    | none                    |
 | `streams`  | none                    |
 | `url`      | `urlParse`, `urlUpdate` |
+| `url-pattern` | `urlPatternParse`, `urlPatternProcessInput` |
 | `headers`  | none                    |
 | `request`  | none                    |
 | `response` | none                    |
@@ -88,6 +89,19 @@ top-level `const` becomes a global lexical binding: readable by guest code, and 
 duplicate-declaration `SyntaxError` for any guest that declares the same name at
 its own top level. A module that needs a private helper wraps itself in an IIFE
 and touches nothing but `globalThis`.
+
+## Where the line between the module and its host falls
+
+`url-pattern` is the clearest case. The pattern syntax is a grammar with a
+tokenizer, a parser and a compilation step, and the conformance suite has two
+tests for it: an implementation written here could be wrong in a dozen ways and
+still pass both. So the grammar crosses to the host, which answers with the
+eight components, each carrying a matcher and a regexp source in ECMAScript
+syntax, and the matching stays here on the engine's own `RegExp`.
+
+Nothing is held on the host side between calls: both ops are pure functions, and
+a compiled pattern is plain data the guest owns. A resource table would have
+been a leak waiting for a guest that builds patterns in a loop.
 
 ## An engine may still go native
 

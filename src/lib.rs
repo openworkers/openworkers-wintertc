@@ -84,6 +84,14 @@ pub const URL: Module = Module {
     required_ops: &["urlParse", "urlUpdate"],
 };
 
+/// URL Pattern Standard, the `URLPattern` interface. The grammar is the host's;
+/// what is here is the matching.
+pub const URL_PATTERN: Module = Module {
+    name: "url-pattern",
+    source: include_str!("../js/url-pattern.js"),
+    required_ops: &["urlPatternParse", "urlPatternProcessInput"],
+};
+
 /// Fetch Standard, the `Request` interface.
 pub const REQUEST: Module = Module {
     name: "request",
@@ -116,6 +124,7 @@ pub const SURFACE: &[Module] = &[
     STRUCTURED_CLONE,
     BASE64,
     URL,
+    URL_PATTERN,
     HEADERS,
     REQUEST,
     RESPONSE,
