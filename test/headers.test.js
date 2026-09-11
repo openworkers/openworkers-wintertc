@@ -37,6 +37,14 @@ describe('construction', () => {
 });
 
 describe('lookup', () => {
+    test('get combines every value of a name kept apart', () => {
+        const headers = new Headers();
+        headers.append('Set-Cookie', 'a=1');
+        headers.append('Set-Cookie', 'b=2');
+
+        expect(headers.get('set-cookie')).toBe('a=1, b=2');
+    });
+
     test('get is case-insensitive', () => {
         const headers = new Headers({ 'Content-Type': 'text/plain' });
 
@@ -98,9 +106,46 @@ describe('mutation', () => {
     });
 });
 
+describe('validation', () => {
+    test('trims surrounding whitespace from a value', () => {
+        expect(new Headers({ 'x-a': '  1  ' }).get('x-a')).toBe('1');
+    });
+
+    test('rejects an invalid name', () => {
+        expect(() => new Headers().set('x a', '1')).toThrow(TypeError);
+    });
+
+    test('rejects a name on every entry point', () => {
+        const headers = new Headers();
+
+        expect(() => headers.append('x a', '1')).toThrow(TypeError);
+        expect(() => headers.get('x a')).toThrow(TypeError);
+        expect(() => headers.has('x a')).toThrow(TypeError);
+        expect(() => headers.delete('x a')).toThrow(TypeError);
+    });
+
+    test('rejects a value with a newline', () => {
+        expect(() => new Headers().set('x-a', 'a\nb')).toThrow(TypeError);
+    });
+
+    test('rejects a value with a NUL', () => {
+        expect(() => new Headers().set('x-a', 'a\0b')).toThrow(TypeError);
+    });
+
+    test('accepts the punctuation a token allows', () => {
+        expect(new Headers({ "x-a!#$%&'*+.^_`|~1": '1' }).get("X-A!#$%&'*+.^_`|~1")).toBe('1');
+    });
+});
+
 describe('iteration', () => {
     test('lowercases names', () => {
         expect([...new Headers({ 'X-Ab': '1' }).keys()]).toEqual(['x-ab']);
+    });
+
+    test('is sorted by name', () => {
+        const headers = new Headers({ 'x-c': '3', 'x-a': '1', 'x-b': '2' });
+
+        expect([...headers.keys()]).toEqual(['x-a', 'x-b', 'x-c']);
     });
 
     test('entries yields name and value', () => {

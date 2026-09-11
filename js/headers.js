@@ -5,141 +5,149 @@
 // shape is part of the contract: a Map keyed by the lowercased name, holding a
 // string, or an array of strings for a header kept apart.
 
-globalThis.Headers = class Headers {
-    constructor(init) {
-        this._map = new Map();
+(function () {
+    'use strict';
 
-        if (init) {
-            if (init instanceof Headers) {
-                // Copy from another Headers object - use entries() to get all values
-                for (const [key, value] of init.entries()) {
-                    this.append(key, value);
-                }
-            } else if (Array.isArray(init)) {
-                // Array of [key, value] pairs
-                for (const [key, value] of init) {
-                    this.append(key, value);
+    // https://fetch.spec.whatwg.org/#header-name
+    const NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+    const SURROUNDING_WHITESPACE = /^[\t\n\r ]+|[\t\n\r ]+$/g;
+
+    const FORBIDDEN_IN_VALUE = /[\0\n\r]/;
+
+    // Apart so the host emits one line per value, which the standard only asks
+    // for set-cookie.
+    const KEPT_APART = ['set-cookie', 'www-authenticate', 'proxy-authenticate'];
+
+    function normalizeName(name) {
+        const key = String(name).toLowerCase();
+
+        if (!NAME.test(key)) {
+            throw new TypeError("'" + key + "' is not a valid header name");
+        }
+
+        return key;
+    }
+
+    function normalizeValue(value) {
+        const normalized = String(value).replace(SURROUNDING_WHITESPACE, '');
+
+        if (FORBIDDEN_IN_VALUE.test(normalized)) {
+            throw new TypeError('the header value holds a forbidden character');
+        }
+
+        return normalized;
+    }
+
+    globalThis.Headers = class Headers {
+        constructor(init) {
+            this._map = new Map();
+
+            if (!init) {
+                return;
+            }
+
+            if (init instanceof Headers || Array.isArray(init)) {
+                for (const [name, value] of init) {
+                    this.append(name, value);
                 }
             } else if (typeof init === 'object') {
-                // Plain object
-                for (const key of Object.keys(init)) {
-                    this.append(key, init[key]);
+                for (const name of Object.keys(init)) {
+                    this.append(name, init[name]);
                 }
             }
         }
-    }
 
-    // Normalize header name (lowercase)
-    _normalizeKey(name) {
-        return String(name).toLowerCase();
-    }
+        append(name, value) {
+            const key = normalizeName(name);
+            const normalized = normalizeValue(value);
 
-    append(name, value) {
-        const key = this._normalizeKey(name);
-        const strValue = String(value);
+            if (!this._map.has(key)) {
+                this._map.set(key, normalized);
 
-        // Special headers that must not be combined with comma separation
-        const specialHeaders = ['set-cookie', 'www-authenticate', 'proxy-authenticate'];
-        const isSpecial = specialHeaders.includes(key);
+                return;
+            }
 
-        if (this._map.has(key)) {
             const existing = this._map.get(key);
-            if (isSpecial) {
-                // Store as array
-                if (Array.isArray(existing)) {
-                    existing.push(strValue);
+
+            if (!KEPT_APART.includes(key)) {
+                this._map.set(key, existing + ', ' + normalized);
+            } else if (Array.isArray(existing)) {
+                existing.push(normalized);
+            } else {
+                this._map.set(key, [existing, normalized]);
+            }
+        }
+
+        delete(name) {
+            this._map.delete(normalizeName(name));
+        }
+
+        get(name) {
+            const value = this._map.get(normalizeName(name));
+
+            if (value === undefined) {
+                return null;
+            }
+
+            // Every value comma-joined, set-cookie included; getSetCookie is
+            // what keeps those reachable one by one.
+            return Array.isArray(value) ? value.join(', ') : value;
+        }
+
+        has(name) {
+            return this._map.has(normalizeName(name));
+        }
+
+        set(name, value) {
+            this._map.set(normalizeName(name), normalizeValue(value));
+        }
+
+        // https://fetch.spec.whatwg.org/#concept-header-list-sort-and-combine
+        *entries() {
+            for (const key of [...this._map.keys()].sort()) {
+                const value = this._map.get(key);
+
+                if (Array.isArray(value)) {
+                    for (const one of value) {
+                        yield [key, one];
+                    }
                 } else {
-                    this._map.set(key, [existing, strValue]);
+                    yield [key, value];
                 }
-            } else {
-                // Combine with comma separator for regular headers
-                this._map.set(key, existing + ', ' + strValue);
-            }
-        } else {
-            // First value - store as-is (string)
-            this._map.set(key, strValue);
-        }
-    }
-
-    delete(name) {
-        this._map.delete(this._normalizeKey(name));
-    }
-
-    get(name) {
-        const value = this._map.get(this._normalizeKey(name));
-        if (value === undefined) return null;
-        // If it's an array (special headers), return the first value
-        return Array.isArray(value) ? value[0] : value;
-    }
-
-    has(name) {
-        return this._map.has(this._normalizeKey(name));
-    }
-
-    set(name, value) {
-        this._map.set(this._normalizeKey(name), String(value));
-    }
-
-    // Iteration methods
-    *entries() {
-        for (const [key, value] of this._map) {
-            if (Array.isArray(value)) {
-                // Yield each array value as a separate entry
-                for (const v of value) {
-                    yield [key, v];
-                }
-            } else {
-                yield [key, value];
             }
         }
-    }
 
-    *keys() {
-        for (const [key, value] of this._map) {
-            if (Array.isArray(value)) {
-                // Yield the key multiple times for array values
-                for (let i = 0; i < value.length; i++) {
-                    yield key;
-                }
-            } else {
+        *keys() {
+            for (const [key] of this.entries()) {
                 yield key;
             }
         }
-    }
 
-    *values() {
-        for (const value of this._map.values()) {
-            if (Array.isArray(value)) {
-                yield* value;
-            } else {
+        *values() {
+            for (const [, value] of this.entries()) {
                 yield value;
             }
         }
-    }
 
-    forEach(callback, thisArg) {
-        for (const [key, value] of this._map) {
-            if (Array.isArray(value)) {
-                for (const v of value) {
-                    callback.call(thisArg, v, key, this);
-                }
-            } else {
+        forEach(callback, thisArg) {
+            for (const [key, value] of this.entries()) {
                 callback.call(thisArg, value, key, this);
             }
         }
-    }
 
-    // Make Headers iterable
-    [Symbol.iterator]() {
-        return this.entries();
-    }
+        [Symbol.iterator]() {
+            return this.entries();
+        }
 
-    // getSetCookie returns all Set-Cookie headers as array
-    getSetCookie() {
-        const value = this._map.get('set-cookie');
-        if (!value) return [];
-        // If it's already an array (multiple set-cookie headers), return it
-        // Otherwise wrap single value in array
-        return Array.isArray(value) ? value : [value];
-    }
-};
+        getSetCookie() {
+            const value = this._map.get('set-cookie');
+
+            if (value === undefined) {
+                return [];
+            }
+
+            return Array.isArray(value) ? [...value] : [value];
+        }
+    };
+})();
