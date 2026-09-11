@@ -20,6 +20,14 @@ pub struct Module {
     pub required_ops: &'static [&'static str],
 }
 
+/// URL Standard, the `URL` and `URLSearchParams` interfaces.
+pub const URL: Module = Module {
+    name: "url",
+    source: include_str!("../js/url.js"),
+    required_ops: &["urlParse", "urlUpdate"],
+};
+
+/// Fetch Standard, the `Headers` interface. Asks nothing of its host.
 pub const HEADERS: Module = Module {
     name: "headers",
     source: include_str!("../js/headers.js"),
@@ -27,4 +35,4 @@ pub const HEADERS: Module = Module {
 };
 
 /// Every module, in the order a host has to evaluate them.
-pub const SURFACE: &[Module] = &[HEADERS];
+pub const SURFACE: &[Module] = &[URL, HEADERS];
