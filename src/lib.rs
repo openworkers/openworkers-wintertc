@@ -20,6 +20,21 @@ pub struct Module {
     pub required_ops: &'static [&'static str],
 }
 
+/// DOM Standard, the event core and the message channel that carries it.
+pub const EVENTS: Module = Module {
+    name: "events",
+    source: include_str!("../js/events.js"),
+    required_ops: &[],
+};
+
+/// DOM Standard, `AbortController`, `AbortSignal` and `DOMException`. Extends
+/// the `EventTarget` of [`EVENTS`], so it comes after it.
+pub const ABORT: Module = Module {
+    name: "abort",
+    source: include_str!("../js/abort.js"),
+    required_ops: &[],
+};
+
 /// URL Standard, the `URL` and `URLSearchParams` interfaces.
 pub const URL: Module = Module {
     name: "url",
@@ -35,7 +50,7 @@ pub const HEADERS: Module = Module {
 };
 
 /// Every module, in the order a host has to evaluate them.
-pub const SURFACE: &[Module] = &[URL, HEADERS];
+pub const SURFACE: &[Module] = &[EVENTS, ABORT, URL, HEADERS];
 
 #[cfg(test)]
 mod tests {
