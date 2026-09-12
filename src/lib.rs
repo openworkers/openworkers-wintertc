@@ -70,7 +70,15 @@ pub const ABORT: Module = Module {
     required_ops: &[],
 };
 
-/// Streams Standard, the tier that stands on the host's `ReadableStream`.
+/// Streams Standard, the readable stream the other tiers stand on. It reads
+/// `AbortController`, so it comes after [`ABORT`].
+pub const READABLE_STREAM: Module = Module {
+    name: "readable-stream",
+    source: include_str!("../js/readable-stream.js"),
+    required_ops: &[],
+};
+
+/// Streams Standard, the tier that stands on [`READABLE_STREAM`].
 pub const STREAMS: Module = Module {
     name: "streams",
     source: include_str!("../js/streams.js"),
@@ -157,6 +165,7 @@ pub const SURFACE: &[Module] = &[
     PERFORMANCE,
     EVENTS,
     ABORT,
+    READABLE_STREAM,
     STREAMS,
     COMPRESSION,
     STRUCTURED_CLONE,

@@ -2,13 +2,13 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { readableStreamClass } from './mock/host.js';
 import { evaluate, intrinsics, sandbox } from './support/surface.js';
 
 const box = evaluate(
-    sandbox({ ReadableStream: readableStreamClass(), TextEncoder, TextDecoder }),
+    sandbox({ TextEncoder, TextDecoder }),
     'events',
     'abort',
+    'readable-stream',
     'blob',
     'form-data',
     'structured-clone'

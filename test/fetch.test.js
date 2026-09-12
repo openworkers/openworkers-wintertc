@@ -2,7 +2,6 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { readableStreamClass } from './mock/host.js';
 import { evaluate, intrinsics, sandbox } from './support/surface.js';
 
 // These two stand on most of the surface, and on what the host installs around
@@ -10,7 +9,6 @@ import { evaluate, intrinsics, sandbox } from './support/surface.js';
 function surface() {
     return evaluate(
         sandbox({
-            ReadableStream: readableStreamClass(),
             TextEncoder,
             TextDecoder,
             Blob,
@@ -20,6 +18,7 @@ function surface() {
         }),
         'events',
         'abort',
+        'readable-stream',
         'url',
         'headers',
         'request',
