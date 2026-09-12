@@ -77,6 +77,33 @@ pub const STREAMS: Module = Module {
     required_ops: &[],
 };
 
+/// Compression Streams, the `CompressionStream` and `DecompressionStream`
+/// interfaces. It stands on the `TransformStream` of [`STREAMS`].
+pub const COMPRESSION: Module = Module {
+    name: "compression",
+    source: include_str!("../js/compression.js"),
+    required_ops: &[
+        "compressionDrop",
+        "compressionFinish",
+        "compressionPush",
+        "compressionStart",
+    ],
+};
+
+/// High Resolution Time, the `Performance` interface.
+pub const PERFORMANCE: Module = Module {
+    name: "performance",
+    source: include_str!("../js/performance.js"),
+    required_ops: &["performanceNow", "timeOrigin"],
+};
+
+/// WebAssembly Web API, the entry points that compile from a `Response`.
+pub const WASM_STREAMING: Module = Module {
+    name: "wasm-streaming",
+    source: include_str!("../js/wasm-streaming.js"),
+    required_ops: &[],
+};
+
 /// URL Standard, the `URL` and `URLSearchParams` interfaces.
 pub const URL: Module = Module {
     name: "url",
@@ -127,9 +154,11 @@ pub const SURFACE: &[Module] = &[
     BLOB,
     FORM_DATA,
     NAVIGATOR,
+    PERFORMANCE,
     EVENTS,
     ABORT,
     STREAMS,
+    COMPRESSION,
     STRUCTURED_CLONE,
     BASE64,
     URL,
@@ -137,6 +166,7 @@ pub const SURFACE: &[Module] = &[
     HEADERS,
     REQUEST,
     RESPONSE,
+    WASM_STREAMING,
 ];
 
 #[cfg(test)]

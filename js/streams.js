@@ -179,6 +179,9 @@
                 start(controller) {
                     readableController = controller;
                 },
+                cancel(reason) {
+                    return transformer.cancel ? transformer.cancel(reason) : undefined;
+                },
             }, readableStrategy);
 
             const controller = new TransformStreamDefaultController(readableController);
@@ -203,7 +206,11 @@
 
                     readableController.close();
                 },
-                abort(reason) {
+                async abort(reason) {
+                    if (transformer.cancel) {
+                        await transformer.cancel(reason);
+                    }
+
                     readableController.error(reason);
                 },
             }, writableStrategy);
