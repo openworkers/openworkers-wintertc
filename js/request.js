@@ -4,6 +4,24 @@
 (() => {
     'use strict';
 
+    // https://fetch.spec.whatwg.org/#concept-method
+    const METHOD = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+    // Only these six are uppercased; any other token is kept as it was given.
+    const NORMALIZED = ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT'];
+
+    const normalizeMethod = (method) => {
+        const token = String(method);
+
+        if (!METHOD.test(token)) {
+            throw new TypeError("'" + token + "' is not a valid HTTP method");
+        }
+
+        const upper = token.toUpperCase();
+
+        return NORMALIZED.includes(upper) ? upper : token;
+    };
+
     const inferredType = (body) => {
         if (typeof body === 'string') {
             return 'text/plain;charset=UTF-8';
@@ -27,38 +45,48 @@
             // The host builds the incoming request through this constructor, and a
             // client is free to put a body on a GET; only a guest is held to the
             // standard's refusal.
-            const method = (init.method || 'GET').toUpperCase();
+            const method = normalizeMethod(init.method || 'GET');
             const carries = init.body !== null && init.body !== undefined;
 
             if (!init._fromHost && carries && (method === 'GET' || method === 'HEAD')) {
                 throw new TypeError('Request with method ' + method + ' cannot carry a body');
             }
 
+            // A body that encodes itself (FormData) does it once: the content type
+            // has to name the boundary it produced.
+            const form =
+                init.body && typeof init.body._encode === 'function' ? init.body._encode() : null;
+            const body = form ? form.bytes : init.body;
+
             // Handle input - can be a URL string or another Request
             if (input instanceof Request) {
                 // Clone from another Request
                 this.url = input.url;
-                this.method = init.method || input.method;
+                this.method = init.method === undefined ? input.method : method;
                 this.headers = new Headers(init.headers || input.headers);
                 // Body handling for clone
                 if (init.body !== undefined) {
-                    this._initBody(init.body);
+                    this._initBody(body);
                 } else if (input.body && !input.bodyUsed) {
-                    this._initBody(input.body);
+                    // Tee it, or the two requests would drain the one stream.
+                    const [mine, theirs] = input.body.tee();
+
+                    input.body = theirs;
+                    this._initBody(mine);
                 } else {
                     this.body = null;
                 }
             } else {
                 // Parsed against no base, so a relative url is a TypeError.
                 this.url = new URL(input).href;
-                this.method = (init.method || 'GET').toUpperCase();
+                this.method = method;
                 this.headers = new Headers(init.headers);
 
                 // Handle streaming body from native (passed as _bodyStreamId)
                 if (init._bodyStreamId !== undefined) {
                     this.body = __createNativeStream(init._bodyStreamId);
                 } else {
-                    this._initBody(init.body);
+                    this._initBody(body);
                 }
             }
 
@@ -66,7 +94,7 @@
             this.signal = init.signal || new globalThis.AbortController().signal;
             this.keepalive = Boolean(init.keepalive);
 
-            const inferred = inferredType(init.body);
+            const inferred = form ? form.type : inferredType(init.body);
 
             if (inferred && !this.headers.has('content-type')) {
                 this.headers.set('content-type', inferred);
@@ -113,11 +141,13 @@
             if (this.bodyUsed) {
                 throw new TypeError('Body has already been consumed');
             }
-            this.bodyUsed = true;
 
+            // Nothing to disturb, so a body-less read can be repeated.
             if (!this.body) {
                 return '';
             }
+
+            this.bodyUsed = true;
 
             const reader = this.body.getReader();
             const chunks = [];
@@ -252,11 +282,13 @@
             if (this.bodyUsed) {
                 throw new TypeError('Body has already been consumed');
             }
-            this.bodyUsed = true;
 
+            // Nothing to disturb, so a body-less read can be repeated.
             if (!this.body) {
                 return new ArrayBuffer(0);
             }
+
+            this.bodyUsed = true;
 
             const reader = this.body.getReader();
             const chunks = [];

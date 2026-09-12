@@ -226,3 +226,29 @@ describe('the host contract', () => {
         expect(headers._map.get('set-cookie')).toEqual(['a=1', 'b=2']);
     });
 });
+
+describe('the Headers init', () => {
+    test('takes any iterable of pairs', () => {
+        const headers = new Headers(new Map([['x-a', '1'], ['x-b', '2']]));
+
+        expect(headers.get('x-a')).toBe('1');
+        expect(headers.get('x-b')).toBe('2');
+    });
+
+    test('refuses an entry that is not a pair', () => {
+        expect(() => new Headers([['x-a']])).toThrow(TypeError);
+        expect(() => new Headers([['x-a', '1', '2']])).toThrow(TypeError);
+        expect(() => new Headers([null])).toThrow(TypeError);
+    });
+
+    test('reads an object with an iterator as a sequence', () => {
+        expect(
+            () =>
+                new Headers({
+                    [Symbol.iterator]() {
+                        throw new TypeError('nope');
+                    },
+                })
+        ).toThrow('nope');
+    });
+});

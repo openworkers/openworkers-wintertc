@@ -73,7 +73,15 @@
                 this.headers = new Headers(init.headers);
             }
 
-            const inferred = inferredType(body);
+            // A body that encodes itself (FormData) does it once: the content type
+            // has to name the boundary it produced.
+            const form = body && typeof body._encode === 'function' ? body._encode() : null;
+
+            if (form) {
+                body = form.bytes;
+            }
+
+            const inferred = form ? form.type : inferredType(body);
 
             if (inferred && !this.headers.has('content-type')) {
                 this.headers.set('content-type', inferred);
@@ -119,11 +127,13 @@
             if (this.bodyUsed) {
                 throw new TypeError('Body has already been consumed');
             }
-            this.bodyUsed = true;
 
+            // Nothing to disturb, so a body-less read can be repeated.
             if (!this.body) {
                 return '';
             }
+
+            this.bodyUsed = true;
 
             const reader = this.body.getReader();
             const chunks = [];
@@ -154,11 +164,13 @@
             if (this.bodyUsed) {
                 throw new TypeError('Body has already been consumed');
             }
-            this.bodyUsed = true;
 
+            // Nothing to disturb, so a body-less read can be repeated.
             if (!this.body) {
                 return new ArrayBuffer(0);
             }
+
+            this.bodyUsed = true;
 
             const reader = this.body.getReader();
             const chunks = [];

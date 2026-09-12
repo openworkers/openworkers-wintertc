@@ -204,3 +204,42 @@ describe('Request', () => {
         expect(request.headers.get('x-a')).toBe('1');
     });
 });
+
+describe('the method of a Request', () => {
+    test('uppercases the six the standard names', () => {
+        const methods = ['get', 'head', 'post', 'put', 'delete', 'options'];
+
+        expect(
+            methods.map((method) => new Request('https://example.com/', { method }).method)
+        ).toEqual(['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS']);
+    });
+
+    test('keeps any other token as it was given', () => {
+        expect(new Request('https://example.com/', { method: 'patch' }).method).toBe('patch');
+        expect(new Request('https://example.com/', { method: 'QUERY' }).method).toBe('QUERY');
+    });
+
+    test('refuses something that is not a token', () => {
+        expect(() => new Request('https://example.com/', { method: 'a b' })).toThrow(TypeError);
+    });
+});
+
+describe('a body that is not there', () => {
+    test('reads as many times as asked', async () => {
+        const response = new Response(null, { status: 204 });
+
+        expect(await response.text()).toBe('');
+        expect(await response.text()).toBe('');
+        expect(response.bodyUsed).toBe(false);
+    });
+});
+
+describe('a Request built from another Request', () => {
+    test('leaves both bodies readable', async () => {
+        const first = new Request('https://example.com/', { method: 'POST', body: 'payload' });
+        const second = new Request(first);
+
+        expect(await second.text()).toBe('payload');
+        expect(await first.text()).toBe('payload');
+    });
+});

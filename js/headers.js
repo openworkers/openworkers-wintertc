@@ -49,9 +49,17 @@
                 return;
             }
 
-            if (init instanceof Headers || Array.isArray(init)) {
-                for (const [name, value] of init) {
-                    this.append(name, value);
+            // WebIDL reads anything iterable as the sequence arm of the union, and
+            // everything else as the record arm.
+            if (typeof init[Symbol.iterator] === 'function') {
+                for (const entry of init) {
+                    const pair = [...entry];
+
+                    if (pair.length !== 2) {
+                        throw new TypeError('a header entry takes exactly two items');
+                    }
+
+                    this.append(pair[0], pair[1]);
                 }
             } else if (typeof init === 'object') {
                 for (const name of Object.keys(init)) {
