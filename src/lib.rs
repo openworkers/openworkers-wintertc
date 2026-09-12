@@ -78,6 +78,14 @@ pub const READABLE_STREAM: Module = Module {
     required_ops: &[],
 };
 
+/// Streams Standard, the byte tier. It patches [`READABLE_STREAM`], so it comes
+/// after it.
+pub const BYTE_STREAM: Module = Module {
+    name: "byte-stream",
+    source: include_str!("../js/byte-stream.js"),
+    required_ops: &[],
+};
+
 /// Streams Standard, the tier that stands on [`READABLE_STREAM`].
 pub const STREAMS: Module = Module {
     name: "streams",
@@ -166,6 +174,7 @@ pub const SURFACE: &[Module] = &[
     EVENTS,
     ABORT,
     READABLE_STREAM,
+    BYTE_STREAM,
     STREAMS,
     COMPRESSION,
     STRUCTURED_CLONE,

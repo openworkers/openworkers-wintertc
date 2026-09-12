@@ -16,8 +16,14 @@
             this._state = 'readable'; // 'readable', 'closed', 'errored'
             this._storedError = null;
 
-            // Create controller
-            const controller = new ReadableStreamDefaultController(this);
+            // A byte stream needs its own controller before `start` sees it,
+            // so the class is looked up instead of named.
+            const Controller =
+                underlyingSource.type === 'bytes' && globalThis.ReadableByteStreamController
+                    ? globalThis.ReadableByteStreamController
+                    : globalThis.ReadableStreamDefaultController;
+
+            const controller = new Controller(this);
             this._controller = controller;
 
             // Start the stream
