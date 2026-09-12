@@ -19,6 +19,7 @@ function surface() {
         'events',
         'abort',
         'readable-stream',
+        'byte-stream',
         'url',
         'headers',
         'request',
@@ -80,6 +81,23 @@ describe('Response status', () => {
         const socket = { send() {} };
 
         expect(() => new Response('hi', { status: 101, webSocket: socket })).toThrow(TypeError);
+    });
+});
+
+describe('a body is a byte stream', () => {
+    test('a response body takes a byob reader', async () => {
+        const reader = new Response('hi').body.getReader({ mode: 'byob' });
+        const { value } = await reader.read(new Uint8Array(2));
+
+        expect(new TextDecoder().decode(value)).toBe('hi');
+    });
+
+    test('a request body takes a byob reader', async () => {
+        const request = new Request('http://example.com/', { method: 'POST', body: 'sent' });
+        const reader = request.body.getReader({ mode: 'byob' });
+        const { value } = await reader.read(new Uint8Array(4));
+
+        expect(new TextDecoder().decode(value)).toBe('sent');
     });
 });
 

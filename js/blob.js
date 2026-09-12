@@ -44,6 +44,7 @@ globalThis.Blob = class Blob {
     stream() {
         const bytes = this._getBytes();
         return new ReadableStream({
+            type: 'bytes',
             start(controller) {
                 controller.enqueue(bytes);
                 controller.close();

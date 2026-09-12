@@ -91,6 +91,7 @@
             } else if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
                 const bytes = body instanceof Uint8Array ? body : new Uint8Array(body);
                 this.body = new ReadableStream({
+                    type: 'bytes',
                     start(controller) {
                         controller.enqueue(bytes);
                         controller.close();
@@ -104,6 +105,7 @@
                 const encoder = new TextEncoder();
                 const bytes = encoder.encode(String(body));
                 this.body = new ReadableStream({
+                    type: 'bytes',
                     start(controller) {
                         controller.enqueue(bytes);
                         controller.close();
