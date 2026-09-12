@@ -13,7 +13,9 @@
 
     const SURROUNDING_WHITESPACE = /^[\t\n\r ]+|[\t\n\r ]+$/g;
 
-    const FORBIDDEN_IN_VALUE = /[\0\n\r]/;
+    // \x00 rather than \0, which a regexp engine backed by Rust's regex crate
+    // reads as a backreference and refuses.
+    const FORBIDDEN_IN_VALUE = /[\x00\n\r]/;
 
     // Apart so the host emits one line per value, which the standard only asks
     // for set-cookie.
