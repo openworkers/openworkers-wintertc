@@ -64,6 +64,24 @@ describe('Response status', () => {
     test('redirect refuses a status that is not a redirect', () => {
         expect(() => Response.redirect('https://example.com/', 200)).toThrow(RangeError);
     });
+
+    test('an accepted upgrade carries 101 and its socket', () => {
+        const socket = { send() {} };
+        const response = new Response(null, { status: 101, webSocket: socket });
+
+        expect(response.status).toBe(101);
+        expect(response.webSocket).toBe(socket);
+    });
+
+    test('101 without a socket is still outside the range', () => {
+        expect(() => new Response(null, { status: 101 })).toThrow(RangeError);
+    });
+
+    test('an upgrade still refuses a body', () => {
+        const socket = { send() {} };
+
+        expect(() => new Response('hi', { status: 101, webSocket: socket })).toThrow(TypeError);
+    });
 });
 
 describe('the content type a body implies', () => {

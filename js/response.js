@@ -37,8 +37,12 @@
             const status = init.status === undefined ? 200 : init.status;
             const given = body !== null && body !== undefined;
 
+            // The one status outside the standard's range a worker may build: it
+            // carries the socket of an accepted upgrade, as Workers does.
+            const upgrading = status === 101 && !!init.webSocket;
+
             if (!init[INTERNAL]) {
-                if (status < 200 || status > 599) {
+                if (!upgrading && (status < 200 || status > 599)) {
                     throw new RangeError('Response status ' + status + ' is outside the 200-599 range');
                 }
 
@@ -52,6 +56,10 @@
             this.ok = this.status >= 200 && this.status < 300;
             this.bodyUsed = false;
             this._nativeStreamId = null;
+
+            if (upgrading) {
+                this.webSocket = init.webSocket;
+            }
 
             // Standard Response properties
             this.url = init.url || '';
