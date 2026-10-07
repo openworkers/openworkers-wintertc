@@ -62,6 +62,15 @@ order that makes that true. `required_ops` covers the native namespace alone.
 replacing it: the host backs that one with its own channel, and the streaming
 battery in `openworkers-conformance` measures what happens on it.
 
+`DISPATCH` is not in `SURFACE`. It is the dispatch between the host and the
+guest's handlers: `addEventListener`, `export default`, `respondWith`,
+`waitUntil` and the task results. The script evaluates to a function; the host
+calls it after the surface and before the guest script, with its engine's
+`streamBody(response, ended)` and `disconnect(response)`, and keeps the
+`{ fetch, task }` it answers. Each of these answers a handle whose `answer`,
+`done` and `streamed` promises always fulfil, so the host reads how far an
+event got from them and not from globals.
+
 ## Why a module reads its ops late
 
 A module never captures a host function; it reads it out of the namespace at call

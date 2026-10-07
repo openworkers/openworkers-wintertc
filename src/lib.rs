@@ -164,6 +164,16 @@ pub const HEADERS: Module = Module {
     required_ops: &[],
 };
 
+/// The dispatch between a host and the guest's handlers: `addEventListener`,
+/// `export default`, `respondWith`, `waitUntil` and the task results.
+///
+/// Not part of [`SURFACE`]: the script evaluates to a function, which the
+/// host calls once per realm after the surface and before the guest script,
+/// with its engine's `streamBody(response, ended)` and `disconnect(response)`.
+/// The call answers `{ fetch, task }` for the host to keep out of the guest's
+/// reach; js/dispatch.js describes the handle each of them answers.
+pub const DISPATCH: &str = include_str!("../js/dispatch.js");
+
 /// Every module, in the order a host has to evaluate them.
 pub const SURFACE: &[Module] = &[
     TEXT_ENCODING,
