@@ -17,6 +17,34 @@
     const ERROR = Symbol('error');
     const CONTROLLER = Symbol('controller');
     const WRITE = Symbol('write');
+    const SIZE = Symbol('size');
+    const QUEUED = Symbol('queued');
+    const READY = Symbol('ready');
+    const PRESSURE = Symbol('pressure');
+    const DESIRED = Symbol('desired');
+    const UPDATE = Symbol('update');
+    const FAIL = Symbol('fail');
+    const END = Symbol('end');
+
+    const deferred = () => {
+        const settle = {};
+
+        settle.promise = new Promise((resolve, reject) => {
+            settle.resolve = resolve;
+            settle.reject = reject;
+        });
+
+        return settle;
+    };
+
+    // The standard marks the ready promise handled, so its rejection is not
+    // reported to a guest that never looks at it.
+    const handledRejection = (reason) => {
+        const promise = Promise.reject(reason);
+        promise.catch(() => {});
+
+        return promise;
+    };
 
     class WritableStreamDefaultController {
         constructor(stream) {
@@ -24,25 +52,37 @@
         }
 
         error(reason) {
-            this[STREAM][ERROR] = reason;
-            this[STREAM][STATE] = 'errored';
+            this[STREAM][FAIL](reason);
         }
     }
 
     class WritableStream {
         constructor(sink = {}, strategy = {}) {
+            const highWaterMark =
+                strategy.highWaterMark === undefined ? 1 : Number(strategy.highWaterMark);
+
+            if (Number.isNaN(highWaterMark) || highWaterMark < 0) {
+                throw new RangeError('highWaterMark must be a non-negative number');
+            }
+
             this[SINK] = sink;
             this[STATE] = 'writable';
             this[ERROR] = undefined;
             this[WRITER] = null;
             this[CONTROLLER] = new WritableStreamDefaultController(this);
+            this[SIZE] = strategy.size === undefined ? () => 1 : (chunk) => strategy.size(chunk);
+            this[QUEUED] = 0;
+            this[PRESSURE] = false;
+            this[READY] = { promise: Promise.resolve(), resolve() {} };
+            this.highWaterMark = highWaterMark;
 
             // Writes run one at a time, in the order they were made.
             this[QUEUE] = Promise.resolve(
                 sink.start ? sink.start(this[CONTROLLER]) : undefined
             );
+            this[QUEUE].catch((error) => this[FAIL](error));
 
-            this.highWaterMark = strategy.highWaterMark === undefined ? 1 : strategy.highWaterMark;
+            this[UPDATE]();
         }
 
         get locked() {
@@ -64,8 +104,7 @@
                 return Promise.resolve();
             }
 
-            this[STATE] = 'errored';
-            this[ERROR] = reason;
+            this[FAIL](reason);
 
             return Promise.resolve(this[SINK].abort ? this[SINK].abort(reason) : undefined);
         }
@@ -79,8 +118,55 @@
                 this[SINK].close ? this[SINK].close() : undefined
             );
             this[STATE] = 'closed';
+            this[UPDATE]();
 
             return this[QUEUE];
+        }
+
+        [DESIRED]() {
+            if (this[STATE] === 'errored') {
+                return null;
+            }
+
+            if (this[STATE] === 'closed') {
+                return 0;
+            }
+
+            return this.highWaterMark - this[QUEUED];
+        }
+
+        // The ready promise stays pending while the queue holds as much as the
+        // strategy allows, and settles once a write drains it below that.
+        [UPDATE]() {
+            const pressure = this[STATE] === 'writable' && this[DESIRED]() <= 0;
+
+            if (pressure === this[PRESSURE]) {
+                return;
+            }
+
+            this[PRESSURE] = pressure;
+
+            if (pressure) {
+                this[READY] = deferred();
+            } else {
+                this[READY].resolve();
+            }
+        }
+
+        [FAIL](reason) {
+            if (this[STATE] === 'errored') {
+                return;
+            }
+
+            this[STATE] = 'errored';
+            this[ERROR] = reason;
+
+            const ready = this[PRESSURE] ? this[READY] : deferred();
+
+            ready.promise.catch(() => {});
+            ready.reject(reason);
+            this[READY] = ready;
+            this[PRESSURE] = false;
         }
 
         [WRITE](chunk) {
@@ -88,8 +174,41 @@
                 return Promise.reject(this[ERROR] || new TypeError('WritableStream is not writable'));
             }
 
-            this[QUEUE] = this[QUEUE].then(() =>
+            let size;
+
+            try {
+                size = this[SIZE](chunk);
+            } catch (error) {
+                this[FAIL](error);
+
+                return Promise.reject(error);
+            }
+
+            if (!(size >= 0) || size === Infinity) {
+                const error = new RangeError('A chunk size must be a finite, non-negative number');
+                this[FAIL](error);
+
+                return Promise.reject(error);
+            }
+
+            this[QUEUED] += size;
+            this[UPDATE]();
+
+            const written = this[QUEUE].then(() =>
                 this[SINK].write ? this[SINK].write(chunk, this[CONTROLLER]) : undefined
+            );
+
+            this[QUEUE] = written.then(
+                () => {
+                    this[QUEUED] -= size;
+                    this[UPDATE]();
+                },
+                (error) => {
+                    this[QUEUED] -= size;
+                    this[FAIL](error);
+
+                    throw error;
+                }
             );
 
             return this[QUEUE];
@@ -102,11 +221,19 @@
         }
 
         get desiredSize() {
-            return this[STREAM] ? this[STREAM].highWaterMark : null;
+            if (!this[STREAM]) {
+                throw new TypeError('Writer is released');
+            }
+
+            return this[STREAM][DESIRED]();
         }
 
         get ready() {
-            return Promise.resolve();
+            if (!this[STREAM]) {
+                return handledRejection(new TypeError('Writer is released'));
+            }
+
+            return this[STREAM][READY].promise;
         }
 
         get closed() {
@@ -148,8 +275,9 @@
     }
 
     class TransformStreamDefaultController {
-        constructor(readableController) {
+        constructor(readableController, end) {
             this[CONTROLLER] = readableController;
+            this[END] = end;
         }
 
         get desiredSize() {
@@ -162,16 +290,35 @@
 
         error(reason) {
             this[CONTROLLER].error(reason);
+            this[END]();
         }
 
         terminate() {
             this[CONTROLLER].close();
+            this[END]();
         }
     }
 
     class TransformStream {
         constructor(transformer = {}, writableStrategy = {}, readableStrategy = {}) {
             let readableController = null;
+            // Set while a write waits for the reader to want more.
+            let pulled = null;
+            // The readable side is closed, errored or cancelled: its desired
+            // size says nothing about a reader any more.
+            let ended = false;
+
+            const release = () => {
+                if (pulled) {
+                    pulled.resolve();
+                    pulled = null;
+                }
+            };
+
+            const end = () => {
+                ended = true;
+                release();
+            };
 
             // The host calls start synchronously, so the controller is in hand
             // before the constructor returns.
@@ -179,18 +326,30 @@
                 start(controller) {
                     readableController = controller;
                 },
+                pull() {
+                    release();
+                },
                 cancel(reason) {
+                    end();
+
                     return transformer.cancel ? transformer.cancel(reason) : undefined;
                 },
             }, readableStrategy);
 
-            const controller = new TransformStreamDefaultController(readableController);
+            const controller = new TransformStreamDefaultController(readableController, end);
 
             this.writable = new WritableStream({
                 start() {
                     return transformer.start ? transformer.start(controller) : undefined;
                 },
-                write(chunk) {
+                async write(chunk) {
+                    // The readable side holds what nobody read yet: transform
+                    // nothing more until a reader pulls.
+                    if (!ended && readableController.desiredSize <= 0) {
+                        pulled = deferred();
+                        await pulled.promise;
+                    }
+
                     if (transformer.transform) {
                         return transformer.transform(chunk, controller);
                     }
@@ -329,17 +488,26 @@
     ReadableStream.prototype.pipeTo = async function pipeTo(destination, options = {}) {
         const reader = this.getReader();
         const writer = destination.getWriter();
+        let written = Promise.resolve();
 
         try {
             for (;;) {
+                // Read nothing the destination has no room for.
+                await writer.ready;
+
                 const { done, value } = await reader.read();
 
                 if (done) {
                     break;
                 }
 
-                await writer.write(value);
+                // A failed write errors the destination, and the next ready
+                // or the wait below reports it.
+                written = writer.write(value);
+                written.catch(() => {});
             }
+
+            await written;
 
             if (!options.preventClose) {
                 await writer.close();
@@ -347,6 +515,10 @@
         } catch (error) {
             if (!options.preventAbort) {
                 await writer.abort(error);
+            }
+
+            if (!options.preventCancel) {
+                await reader.cancel(error).catch(() => {});
             }
 
             throw error;

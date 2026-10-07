@@ -18,7 +18,7 @@ const host = surface();
 const { ReadableStream, WritableStream, TransformStream } = host;
 const { CountQueuingStrategy, ByteLengthQueuingStrategy } = host;
 const { TextEncoderStream, TextDecoderStream } = host;
-const { TypeError } = intrinsics(host);
+const { TypeError, RangeError } = intrinsics(host);
 
 function streamOf(values) {
     return new ReadableStream({
@@ -132,6 +132,162 @@ describe('WritableStream', () => {
         writer.releaseLock();
 
         await expect(writer.write('a')).rejects.toBeInstanceOf(TypeError);
+    });
+});
+
+// Settles on `open()`, so a test holds a sink write in flight.
+function gate() {
+    let open;
+    const promise = new Promise((resolve) => {
+        open = resolve;
+    });
+
+    return { promise, open };
+}
+
+// Lets every pending promise reaction run.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('WritableStream backpressure', () => {
+    test('desiredSize counts what the sink has not taken', async () => {
+        const held = gate();
+        const stream = new WritableStream(
+            {
+                write() {
+                    return held.promise;
+                },
+            },
+            { highWaterMark: 2 }
+        );
+        const writer = stream.getWriter();
+
+        expect(writer.desiredSize).toBe(2);
+        writer.write('a');
+        writer.write('b');
+        expect(writer.desiredSize).toBe(0);
+
+        held.open();
+        await writer.close();
+        expect(writer.desiredSize).toBe(0);
+    });
+
+    test('ready waits while the queue is full', async () => {
+        const held = gate();
+        const stream = new WritableStream({
+            write() {
+                return held.promise;
+            },
+        });
+        const writer = stream.getWriter();
+        let ready = false;
+
+        writer.write('a');
+        writer.ready.then(() => {
+            ready = true;
+        });
+        await settle();
+        expect(ready).toBe(false);
+
+        held.open();
+        await settle();
+        expect(ready).toBe(true);
+    });
+
+    test('the strategy size weighs each chunk', () => {
+        const stream = new WritableStream(
+            {
+                write() {
+                    return new Promise(() => {});
+                },
+            },
+            new ByteLengthQueuingStrategy({ highWaterMark: 8 })
+        );
+        const writer = stream.getWriter();
+        writer.write(new Uint8Array(6));
+
+        expect(writer.desiredSize).toBe(2);
+    });
+
+    test('a failed write errors the stream and rejects ready', async () => {
+        const stream = new WritableStream({
+            write() {
+                throw new Error('disk full');
+            },
+        });
+        const writer = stream.getWriter();
+
+        await expect(writer.write('a')).rejects.toThrow('disk full');
+        await expect(writer.ready).rejects.toThrow('disk full');
+        expect(writer.desiredSize).toBe(null);
+    });
+
+    test('refuses a negative highWaterMark', () => {
+        expect(() => new WritableStream({}, { highWaterMark: -1 })).toThrow(RangeError);
+    });
+
+    test('a transform waits for its reader', async () => {
+        let transformed = 0;
+        const counted = new TransformStream({
+            transform(chunk, controller) {
+                transformed += 1;
+                controller.enqueue(chunk);
+            },
+        });
+        const writer = counted.writable.getWriter();
+
+        writer.write('a');
+        writer.write('b');
+        writer.write('c');
+        await settle();
+        expect(transformed).toBe(1);
+
+        const reader = counted.readable.getReader();
+        expect((await reader.read()).value).toBe('a');
+        expect((await reader.read()).value).toBe('b');
+        expect(transformed).toBe(2);
+    });
+
+    test('a write after terminate fails instead of waiting', async () => {
+        const stopper = new TransformStream({
+            transform(chunk, controller) {
+                controller.enqueue(chunk);
+                controller.terminate();
+            },
+        });
+        const writer = stopper.writable.getWriter();
+
+        await writer.write('a');
+        await expect(writer.write('b')).rejects.toBeInstanceOf(TypeError);
+    });
+
+    test('pipeTo reads no further than the destination can take', async () => {
+        let pulls = 0;
+        let next = 0;
+        const source = new ReadableStream({
+            pull(controller) {
+                pulls += 1;
+                controller.enqueue(next++);
+
+                if (next === 3) {
+                    controller.close();
+                }
+            },
+        });
+        const held = gate();
+        const destination = new WritableStream({
+            write() {
+                return held.promise;
+            },
+        });
+
+        const piped = source.pipeTo(destination);
+        await settle();
+        await settle();
+
+        expect(pulls).toBe(1);
+        held.open();
+        await piped;
+        expect(pulls).toBe(3);
     });
 });
 
