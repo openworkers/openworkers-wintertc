@@ -135,6 +135,16 @@ pub const NAVIGATOR: Module = Module {
     required_ops: &["userAgent"],
 };
 
+/// TC39 AsyncContext (`Variable`, `Snapshot`) and Node's `AsyncLocalStorage`
+/// built on it. The host keeps the current frame and carries it across
+/// promise reactions; its own asynchronous callbacks restore the frame of
+/// the code that registered them.
+pub const ASYNC_CONTEXT: Module = Module {
+    name: "async-context",
+    source: include_str!("../js/async-context.js"),
+    required_ops: &["asyncContextGet", "asyncContextSet"],
+};
+
 /// URL Pattern Standard, the `URLPattern` interface. The grammar is the host's;
 /// what is here is the matching.
 pub const URL_PATTERN: Module = Module {
@@ -178,6 +188,7 @@ pub const DISPATCH: &str = include_str!("../js/dispatch.js");
 
 /// Every module, in the order a host has to evaluate them.
 pub const SURFACE: &[Module] = &[
+    ASYNC_CONTEXT,
     TEXT_ENCODING,
     BLOB,
     FORM_DATA,

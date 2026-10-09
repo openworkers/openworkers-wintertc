@@ -62,7 +62,17 @@ function component(pattern) {
     };
 }
 
+// The current async context frame. A real host carries it across promise
+// reactions; this one only holds it, which is what the synchronous tests need.
+let asyncContextFrame;
+
 const ops = {
+    asyncContextGet() {
+        return asyncContextFrame;
+    },
+    asyncContextSet(frame) {
+        asyncContextFrame = frame;
+    },
     urlPatternParse(input, base) {
         if (typeof input === 'string' || base !== null) {
             return null;
