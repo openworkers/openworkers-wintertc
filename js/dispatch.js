@@ -3,13 +3,14 @@
 //
 // The script evaluates to a function that the host calls once per realm,
 // before the guest script runs, with what only the engine knows, and with
-// options ({ strictRespondWith }, see listenerResponse):
+// options ({ strict }, see listenerResponse):
 //
 //   streamBody(response, ended)  send the response body to the host, and
 //                                call ended() once it is out
 //   disconnect(response)         stop a body the client no longer reads
 //
-// The call installs addEventListener, the only global this module sets, and
+// The call installs addEventListener and removeEventListener, the only globals
+// this module sets, and
 // answers { fetch, task } for the host to keep. Each of these answers a
 // handle for one event, whose promises always fulfil:
 //
@@ -17,8 +18,9 @@
 //   done      the answer and every waitUntil promise are settled
 //   streamed  the response body is out
 //
-// with `marks`, how a fetch listener answered (see listenerResponse), and
-// disconnect() for a client that hung up.
+// with `marks`, how a fetch listener answered (see listenerResponse),
+// endDispatch(), which the host calls after the microtask checkpoint that
+// follows its call, and disconnect() for a client that hung up.
 //
 // The handler is looked up when the event arrives, so a handler the script
 // declares through `export default` wins over one it registers through
@@ -32,16 +34,37 @@
     const Response = globalThis.Response;
     const DOMException = globalThis.DOMException;
 
-    // Strict: respondWith as the Service Worker spec has it, only while the
-    // listener runs. Lax, the default: also later, which the OpenWorkers
-    // docs taught; the marks let the host count who does it.
-    const strict = options?.strictRespondWith === true;
+    // Strict: respondWith as the Service Worker spec has it, only during the
+    // dispatch. Lax, the default: also later, which the OpenWorkers docs
+    // taught; the marks let the host count who does it.
+    const strict = options?.strict === true;
 
+    // Every listener per event type, in the order they were added.
     const listeners = Object.create(null);
 
     globalThis.addEventListener = function(type, handler) {
-        listeners[type] = handler;
+        if (typeof handler !== 'function' && typeof handler?.handleEvent !== 'function') {
+            return;
+        }
+
+        const list = (listeners[type] ??= []);
+
+        if (!list.includes(handler)) {
+            list.push(handler);
+        }
     };
+
+    globalThis.removeEventListener = function(type, handler) {
+        const list = listeners[type] ?? [];
+        const index = list.indexOf(handler);
+
+        if (index !== -1) {
+            list.splice(index, 1);
+        }
+    };
+
+    const invoke = (handler, event) =>
+        typeof handler === 'function' ? handler.call(globalThis, event) : handler.handleEvent(event);
 
     const errorMessage = (error) => (error && error.message) || String(error);
 
@@ -71,19 +94,26 @@
         };
     }
 
-    // The response a fetch listener gives: the one it passes to respondWith,
-    // or else a Response it returns, directly or through a promise.
-    // respondWith may run after the listener returns, from a timer, a
-    // callback or the code after an await, which the Service Worker spec and
-    // Cloudflare refuse; with strictRespondWith it throws InvalidStateError
-    // there, as they do. `marks` records it for the host: `late` when
-    // respondWith runs after the listener returned, `afterSettle` when an
-    // async listener's promise had settled before it. A second respondWith
-    // throws and leaves the first response.
-    function listenerResponse(listener, request, life, marks) {
+    // The response the fetch listeners give, called in order until one calls
+    // respondWith, as an event dispatch does: the one passed to respondWith,
+    // or else a Response a listener returns, directly or through a promise.
+    // A listener that throws does not stop the next one.
+    //
+    // The dispatch lasts until the host calls endDispatch, after the
+    // microtask checkpoint that follows the listeners: respondWith in a
+    // microtask, an await on a settled promise included, is in time. Later,
+    // from a task, the Service Worker spec and Cloudflare refuse it; with
+    // `strict` it throws InvalidStateError, as they do. `marks`
+    // records it for the host: `late` when respondWith runs after the
+    // dispatch, `afterSettle` when the async listeners had also ended. A
+    // second respondWith throws InvalidStateError and leaves the first
+    // response.
+    function listenerResponse(list, request, life, marks) {
         let answered = false;
         let dispatching = true;
         let settled = false;
+        let stopped = false;
+        let canceled = false;
         let answer;
         const response = new Promise((resolve) => {
             answer = (value) => {
@@ -93,78 +123,120 @@
         });
 
         const event = {
+            type: 'fetch',
             request,
             waitUntil: life.waitUntil,
+            get defaultPrevented() {
+                return canceled;
+            },
+            preventDefault() {
+                canceled = true;
+            },
+            stopPropagation() {
+                stopped = true;
+            },
+            stopImmediatePropagation() {
+                stopped = true;
+            },
             respondWith(value) {
                 if (answered) {
                     throw new DOMException('respondWith was already called', 'InvalidStateError');
                 }
 
                 if (strict && !dispatching) {
-                    throw new DOMException('respondWith was called after the fetch listener returned', 'InvalidStateError');
+                    throw new DOMException('respondWith was called after the fetch event was dispatched', 'InvalidStateError');
                 }
 
                 marks.late = !dispatching;
                 marks.afterSettle = settled;
+                stopped = true;
                 answer(value);
             },
         };
 
-        let returned;
+        const returned = [];
         let thrown;
 
-        try {
-            returned = listener(event);
-        } catch (error) {
-            thrown = error;
-            returned = Promise.reject(error);
-        }
-
-        dispatching = false;
-
-        // In strict mode the dispatch ends here: no answer now is no answer.
-        if (strict && !answered) {
-            answer(Promise.reject(thrown ?? new TypeError('the fetch listener did not call respondWith')));
-        }
-
-        const isAsync = typeof returned?.then === 'function';
-
-        Promise.resolve(returned).then(
-            (value) => {
-                settled = isAsync;
-
-                if (!answered && value instanceof Response) {
-                    answer(value);
-                }
-            },
-            (error) => {
-                settled = isAsync;
-
-                if (answered) {
-                    console.error('[fetch] Handler error after respondWith:', error);
-                } else {
-                    answer(Promise.reject(error));
-                }
+        for (const handler of list.slice()) {
+            try {
+                returned.push(invoke(handler, event));
+            } catch (error) {
+                thrown ??= error;
+                console.error('[fetch] Listener error:', error);
             }
-        );
 
-        return response;
+            if (stopped) {
+                break;
+            }
+        }
+
+        if (thrown !== undefined && !answered) {
+            answer(Promise.reject(thrown));
+        }
+
+        const pending = returned.filter((value) => typeof value?.then === 'function');
+
+        Promise.allSettled(pending).then(() => {
+            settled = pending.length > 0;
+        });
+
+        for (const value of returned) {
+            Promise.resolve(value).then(
+                (resolved) => {
+                    if (!answered && !strict && resolved instanceof Response) {
+                        answer(resolved);
+                    }
+                },
+                (error) => {
+                    if (answered) {
+                        console.error('[fetch] Handler error after respondWith:', error);
+                    } else {
+                        answer(Promise.reject(error));
+                    }
+                }
+            );
+        }
+
+        function endDispatch() {
+            if (!dispatching) {
+                return;
+            }
+
+            dispatching = false;
+
+            // Strict: no answer by the end of the dispatch is no answer.
+            if (strict && !answered) {
+                answer(Promise.reject(new TypeError('the fetch listener did not call respondWith')));
+            }
+        }
+
+        return { response, endDispatch };
     }
 
-    async function handlerResponse(request, life, marks) {
+    // What answers a fetch, and how the host ends its dispatch. Runs the
+    // handler now, within the host's call.
+    function handlerResponse(request, life, marks) {
         const module = moduleHandler('fetch');
+        const nothingToEnd = () => {};
 
         if (module) {
             const ctx = { waitUntil: life.waitUntil, passThroughOnException() {} };
 
-            return module(request, globalThis.env, ctx);
+            try {
+                return { response: Promise.resolve(module(request, globalThis.env, ctx)), endDispatch: nothingToEnd };
+            } catch (error) {
+                return { response: Promise.reject(error), endDispatch: nothingToEnd };
+            }
         }
 
-        if (listeners.fetch) {
+        if (listeners.fetch?.length) {
             return listenerResponse(listeners.fetch, request, life, marks);
         }
 
-        return new Response('Worker does not implement fetch handler', { status: 501 });
+        return {
+            response: Promise.resolve(new Response('Worker does not implement fetch handler', { status: 501 })),
+            endDispatch: nothingToEnd,
+        };
     }
 
     function fetch(request) {
@@ -175,11 +247,13 @@
             ended = resolve;
         });
 
+        const handled = handlerResponse(request, life, marks);
+
         const answer = (async () => {
             let response;
 
             try {
-                response = await handlerResponse(request, life, marks);
+                response = await handled.response;
 
                 if (!(response instanceof Response)) {
                     throw new TypeError(
@@ -187,6 +261,10 @@
                             ? 'the fetch handler did not respond'
                             : 'the fetch handler did not answer with a Response'
                     );
+                }
+
+                if (response.bodyUsed) {
+                    throw new TypeError('the response body was already used');
                 }
             } catch (error) {
                 console.error('[fetch] Handler error:', error);
@@ -212,7 +290,14 @@
             response = value;
         });
 
-        return { answer, done, streamed, marks, disconnect: () => engine.disconnect(response) };
+        return {
+            answer,
+            done,
+            streamed,
+            marks,
+            endDispatch: handled.endDispatch,
+            disconnect: () => engine.disconnect(response),
+        };
     }
 
     // A task result from what a task handler answers: an object with a
@@ -228,11 +313,26 @@
     // Runs the handler for a task and answers its result. A `task` handler
     // gets every task; without one, a `scheduled` handler gets them as cron
     // events and its return value is not a result.
+    // Calls the listeners of `type` in order, until one answers, and waits
+    // for what they return.
+    async function dispatchTo(type, event, answered) {
+        const returned = [];
+
+        for (const handler of (listeners[type] ?? []).slice()) {
+            returned.push(invoke(handler, event));
+
+            if (answered()) {
+                break;
+            }
+        }
+
+        return Promise.all(returned);
+    }
+
     async function runTask(event, life) {
         const moduleTask = moduleHandler('task');
-        const task = moduleTask ?? listeners.task;
 
-        if (task) {
+        if (moduleTask || listeners.task?.length) {
             let responded = null;
 
             event.waitUntil = life.waitUntil;
@@ -240,17 +340,20 @@
                 responded = taskEnvelope(value);
             };
 
-            const returned = moduleTask
-                ? await moduleTask(event, globalThis.env, { waitUntil: life.waitUntil })
-                : await task(event);
+            if (moduleTask) {
+                const returned = await moduleTask(event, globalThis.env, { waitUntil: life.waitUntil });
 
-            return responded ?? taskEnvelope(returned);
+                return responded ?? taskEnvelope(returned);
+            }
+
+            const returned = await dispatchTo('task', event, () => responded !== null);
+
+            return responded ?? taskEnvelope(returned.find((value) => value !== undefined));
         }
 
         const moduleScheduled = moduleHandler('scheduled');
-        const scheduled = moduleScheduled ?? listeners.scheduled;
 
-        if (scheduled) {
+        if (moduleScheduled || listeners.scheduled?.length) {
             event.type = 'scheduled';
             // A host that never retries a scheduled event has nothing to turn off.
             event.noRetry = function() {};
@@ -259,7 +362,7 @@
                 await moduleScheduled(event, globalThis.env, { waitUntil: life.waitUntil });
             } else {
                 event.waitUntil = life.waitUntil;
-                await scheduled(event);
+                await dispatchTo('scheduled', event, () => false);
             }
 
             return { success: true };
@@ -288,7 +391,7 @@
             }
         })();
 
-        return { answer: done, done, streamed: Promise.resolve(), disconnect() {} };
+        return { answer: done, done, streamed: Promise.resolve(), marks: null, endDispatch() {}, disconnect() {} };
     }
 
     return { fetch, task };

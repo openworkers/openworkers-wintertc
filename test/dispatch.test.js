@@ -55,10 +55,21 @@ function realm(script, options = {}) {
     return { box, dispatch, engine };
 }
 
+// Sends a fetch as a host does: the call, the microtask checkpoint after
+// it, then the end of the dispatch.
+async function dispatchFetch(box, dispatch, url = 'http://localhost/') {
+    const handle = dispatch.fetch(new box.Request(url));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    handle.endDispatch();
+
+    return handle;
+}
+
 // Serves one request and answers the status and the body text.
 async function fetch(script, options) {
     const { box, dispatch } = realm(script, options);
-    const handle = dispatch.fetch(new box.Request('http://localhost/'));
+    const handle = await dispatchFetch(box, dispatch);
     const response = await handle.answer;
 
     await handle.done;
@@ -141,13 +152,61 @@ describe('fetch through addEventListener', () => {
 // The marks a fetch leaves on its handle once it has answered.
 async function marks(script) {
     const { box, dispatch } = realm(script);
-    const handle = dispatch.fetch(new box.Request('http://localhost/'));
+    const handle = await dispatchFetch(box, dispatch);
     const response = await handle.answer;
 
     await handle.done;
 
     return [response.status, { ...handle.marks }];
 }
+
+describe('several fetch listeners', () => {
+    test('run in order until one calls respondWith', async () => {
+        const script = `
+            globalThis.calls = [];
+            addEventListener('fetch', () => calls.push('first'));
+            addEventListener('fetch', e => { calls.push('second'); e.respondWith(new Response(calls.join(','))); });
+            addEventListener('fetch', () => calls.push('third'));
+        `;
+
+        expect(await fetch(script)).toEqual([200, 'first,second']);
+    });
+
+    test('a listener that throws does not stop the next one', async () => {
+        const script = `
+            addEventListener('fetch', () => { throw new Error('first fails'); });
+            addEventListener('fetch', e => e.respondWith(new Response('second answers')));
+        `;
+
+        expect(await fetch(script)).toEqual([200, 'second answers']);
+    });
+
+    test('preventDefault is there, and a later listener still answers', async () => {
+        const script = `
+            addEventListener('fetch', e => e.preventDefault());
+            addEventListener('fetch', e => e.respondWith(new Response(String(e.defaultPrevented))));
+        `;
+
+        expect(await fetch(script)).toEqual([200, 'true']);
+    });
+
+    test('removeEventListener takes a listener out', async () => {
+        const script = `
+            const gone = e => e.respondWith(new Response('removed listener'));
+            addEventListener('fetch', gone);
+            removeEventListener('fetch', gone);
+            addEventListener('fetch', e => e.respondWith(new Response('kept listener')));
+        `;
+
+        expect(await fetch(script)).toEqual([200, 'kept listener']);
+    });
+
+    test('a Response whose body was used answers 500', async () => {
+        const script = "addEventListener('fetch', e => { const res = new Response('body'); res.text(); e.respondWith(res); });";
+
+        expect(await fetch(script)).toEqual([500, 'Handler exception: the response body was already used']);
+    });
+});
 
 describe('respondWith errors', () => {
     test('a second respondWith throws InvalidStateError', async () => {
@@ -162,14 +221,14 @@ describe('respondWith errors', () => {
             });
         `;
         const { box, dispatch } = realm(script);
-        const handle = dispatch.fetch(new box.Request('http://localhost/'));
+        const handle = await dispatchFetch(box, dispatch);
 
         expect(await (await handle.answer).text()).toBe('first');
         expect(box.second).toBe('InvalidStateError');
     });
 });
 
-const strict = { strictRespondWith: true };
+const strict = { strict: true };
 
 describe('strict respondWith', () => {
     test('respondWith while the listener runs answers', async () => {
@@ -185,27 +244,34 @@ describe('strict respondWith', () => {
         expect(await fetch(script, strict)).toEqual([200, 'later']);
     });
 
-    test('respondWith after an await throws InvalidStateError, and the request fails at once', async () => {
+    test('respondWith after an await on a settled promise is in time', async () => {
+        const script = "addEventListener('fetch', async (e) => { await null; e.respondWith(new Response('microtask')); });";
+
+        expect(await fetch(script, strict)).toEqual([200, 'microtask']);
+    });
+
+    test('respondWith from a task throws InvalidStateError, and the request fails at once', async () => {
         const script = `
-            addEventListener('fetch', async (e) => {
-                await null;
-                try {
-                    e.respondWith(new Response('late'));
-                } catch (error) {
-                    globalThis.late = error.name;
-                }
+            addEventListener('fetch', (e) => {
+                setTimeout(() => {
+                    try {
+                        e.respondWith(new Response('late'));
+                    } catch (error) {
+                        globalThis.late = error.name;
+                    }
+                }, 5);
             });
         `;
         const { box, dispatch } = realm(script, strict);
-        const handle = dispatch.fetch(new box.Request('http://localhost/'));
+        const handle = await dispatchFetch(box, dispatch);
         const response = await handle.answer;
-
-        await handle.done;
 
         expect([response.status, await response.text()]).toEqual([
             500,
             'Handler exception: the fetch listener did not call respondWith',
         ]);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
         expect(box.late).toBe('InvalidStateError');
     });
 
@@ -322,7 +388,7 @@ describe('the fetch handle', () => {
                 e.respondWith(new Response('now'));
             });
         `);
-        const handle = dispatch.fetch(new box.Request('http://localhost/'));
+        const handle = await dispatchFetch(box, dispatch);
 
         await handle.answer;
         expect(box.later).toBe(0);
@@ -338,7 +404,7 @@ describe('the fetch handle', () => {
                 e.respondWith(new Response('kept'));
             });
         `);
-        const handle = dispatch.fetch(new box.Request('http://localhost/'));
+        const handle = await dispatchFetch(box, dispatch);
 
         expect(await (await handle.answer).text()).toBe('kept');
         await handle.done;
@@ -346,7 +412,7 @@ describe('the fetch handle', () => {
 
     test('streamed follows the engine, and disconnect reaches it with the response', async () => {
         const { box, dispatch, engine } = realm("addEventListener('fetch', e => e.respondWith(new Response('body')));");
-        const handle = dispatch.fetch(new box.Request('http://localhost/'));
+        const handle = await dispatchFetch(box, dispatch);
         const response = await handle.answer;
 
         await handle.streamed;
@@ -368,13 +434,16 @@ describe('the fetch handle', () => {
         expect(await fetch(script)).toEqual([200, 'real']);
     });
 
-    test('addEventListener is the only global the dispatch sets', () => {
+    test('addEventListener and removeEventListener are the only globals the dispatch sets', () => {
         const box = surface();
         const before = Object.getOwnPropertyNames(box);
 
         runInContext(DISPATCH, box)({ streamBody() {}, disconnect() {} });
 
-        expect(Object.getOwnPropertyNames(box).filter((name) => !before.includes(name))).toEqual(['addEventListener']);
+        expect(Object.getOwnPropertyNames(box).filter((name) => !before.includes(name))).toEqual([
+            'addEventListener',
+            'removeEventListener',
+        ]);
     });
 });
 

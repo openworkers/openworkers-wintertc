@@ -67,15 +67,17 @@ guest's handlers: `addEventListener`, `export default`, `respondWith`,
 `waitUntil` and the task results. The script evaluates to a function; the host
 calls it after the surface and before the guest script, with its engine's
 `streamBody(response, ended)` and `disconnect(response)`, and keeps the
-`{ fetch, task }` it answers. A second argument, `{ strictRespondWith: true }`,
-makes `respondWith` throw `InvalidStateError` once the listener has returned,
-as the Service Worker spec has it. Each of these answers a handle whose `answer`,
+`{ fetch, task }` it answers. A second argument, `{ strict: true }`, makes
+`respondWith` throw `InvalidStateError` once the dispatch has ended, as the
+Service Worker spec has it. Each of these answers a handle whose `answer`,
 `done` and `streamed` promises always fulfil, so the host reads how far an
 event got from them and not from globals. A fetch handle also carries
-`marks`: `late` when a listener called `respondWith` after it returned, and
-`afterSettle` when an async listener had already ended then. The Service
+`marks`: `late` when a listener called `respondWith` after the dispatch, and
+`afterSettle` when the async listeners had already ended then. The Service
 Worker spec refuses both; the dispatch accepts them and lets the host count
-them.
+them. The dispatch ends when the host calls the handle's `endDispatch()`,
+after the microtask checkpoint that follows its call. Every listener added
+for a type runs, in order, until one calls `respondWith`.
 
 ## Why a module reads its ops late
 

@@ -180,12 +180,13 @@ pub const HEADERS: Module = Module {
 /// Not part of [`SURFACE`]: the script evaluates to a function, which the
 /// host calls once per realm after the surface and before the guest script,
 /// with its engine's `streamBody(response, ended)` and `disconnect(response)`.
-/// An options object may follow: `{ strictRespondWith: true }` holds
-/// `respondWith` to the Service Worker spec.
+/// An options object may follow: `{ strict: true }` holds `respondWith` to
+/// the Service Worker spec.
 /// The call answers `{ fetch, task }` for the host to keep out of the guest's
 /// reach; js/dispatch.js describes the handle each of them answers. A fetch
 /// handle also carries `marks`, the late `respondWith` calls the host can
-/// count.
+/// count, and `endDispatch()`, which the host calls after the microtask
+/// checkpoint that follows its call.
 pub const DISPATCH: &str = include_str!("../js/dispatch.js");
 
 /// Every module, in the order a host has to evaluate them.
