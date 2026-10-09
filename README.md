@@ -67,7 +67,9 @@ guest's handlers: `addEventListener`, `export default`, `respondWith`,
 `waitUntil` and the task results. The script evaluates to a function; the host
 calls it after the surface and before the guest script, with its engine's
 `streamBody(response, ended)` and `disconnect(response)`, and keeps the
-`{ fetch, task }` it answers. Each of these answers a handle whose `answer`,
+`{ fetch, task }` it answers. A second argument, `{ strictRespondWith: true }`,
+makes `respondWith` throw `InvalidStateError` once the listener has returned,
+as the Service Worker spec has it. Each of these answers a handle whose `answer`,
 `done` and `streamed` promises always fulfil, so the host reads how far an
 event got from them and not from globals. A fetch handle also carries
 `marks`: `late` when a listener called `respondWith` after it returned, and

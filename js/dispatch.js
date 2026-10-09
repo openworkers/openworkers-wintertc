@@ -2,7 +2,8 @@
 // engine.
 //
 // The script evaluates to a function that the host calls once per realm,
-// before the guest script runs, with what only the engine knows:
+// before the guest script runs, with what only the engine knows, and with
+// options ({ strictRespondWith }, see listenerResponse):
 //
 //   streamBody(response, ended)  send the response body to the host, and
 //                                call ended() once it is out
@@ -25,10 +26,16 @@
 // in, before the guest script runs, so a guest that replaces it changes
 // nothing here.
 
-(function installDispatch(engine) {
+(function installDispatch(engine, options) {
     'use strict';
 
     const Response = globalThis.Response;
+    const DOMException = globalThis.DOMException;
+
+    // Strict: respondWith as the Service Worker spec has it, only while the
+    // listener runs. Lax, the default: also later, which the OpenWorkers
+    // docs taught; the marks let the host count who does it.
+    const strict = options?.strictRespondWith === true;
 
     const listeners = Object.create(null);
 
@@ -68,7 +75,8 @@
     // or else a Response it returns, directly or through a promise.
     // respondWith may run after the listener returns, from a timer, a
     // callback or the code after an await, which the Service Worker spec and
-    // Cloudflare refuse. `marks` records it for the host: `late` when
+    // Cloudflare refuse; with strictRespondWith it throws InvalidStateError
+    // there, as they do. `marks` records it for the host: `late` when
     // respondWith runs after the listener returned, `afterSettle` when an
     // async listener's promise had settled before it. A second respondWith
     // throws and leaves the first response.
@@ -89,7 +97,11 @@
             waitUntil: life.waitUntil,
             respondWith(value) {
                 if (answered) {
-                    throw new TypeError('respondWith was already called');
+                    throw new DOMException('respondWith was already called', 'InvalidStateError');
+                }
+
+                if (strict && !dispatching) {
+                    throw new DOMException('respondWith was called after the fetch listener returned', 'InvalidStateError');
                 }
 
                 marks.late = !dispatching;
@@ -99,14 +111,21 @@
         };
 
         let returned;
+        let thrown;
 
         try {
             returned = listener(event);
         } catch (error) {
+            thrown = error;
             returned = Promise.reject(error);
         }
 
         dispatching = false;
+
+        // In strict mode the dispatch ends here: no answer now is no answer.
+        if (strict && !answered) {
+            answer(Promise.reject(thrown ?? new TypeError('the fetch listener did not call respondWith')));
+        }
 
         const isAsync = typeof returned?.then === 'function';
 
