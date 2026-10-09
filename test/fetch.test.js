@@ -101,6 +101,42 @@ describe('a body is a byte stream', () => {
     });
 });
 
+describe('a binary body keeps its bytes', () => {
+    // The surface's own Blob, which the host's body path reads
+    const own = evaluate(
+        sandbox({ TextEncoder, TextDecoder, File, FormData, console: { error() {} } }),
+        'blob',
+        'events',
+        'abort',
+        'readable-stream',
+        'byte-stream',
+        'url',
+        'headers',
+        'request',
+        'response'
+    );
+    const pass = () => new TextEncoder().encode('PASS');
+
+    test('a Blob, in a Response and a Request', async () => {
+        expect(await new own.Response(new own.Blob(['PASS'])).text()).toBe('PASS');
+        expect(await new own.Request('http://x/', { method: 'POST', body: new own.Blob(['PASS']) }).text()).toBe('PASS');
+    });
+
+    test('a DataView', async () => {
+        expect(await new Response(new DataView(pass().buffer)).text()).toBe('PASS');
+    });
+
+    test('a typed array other than Uint8Array', async () => {
+        expect(await new Response(new Int16Array(pass().buffer)).text()).toBe('PASS');
+    });
+
+    test('a view of part of a buffer', async () => {
+        const bytes = new TextEncoder().encode('xxPASSxx');
+
+        expect(await new Response(new Uint8Array(bytes.buffer, 2, 4)).text()).toBe('PASS');
+    });
+});
+
 describe('the content type a body implies', () => {
     test('a string is text/plain', () => {
         expect(new Response('hi').headers.get('content-type')).toBe('text/plain;charset=UTF-8');

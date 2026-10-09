@@ -8,6 +8,24 @@
 (() => {
     'use strict';
 
+    // The bytes of a binary body: a Blob, an ArrayBuffer or any view of one.
+    // Anything else is not binary and becomes text.
+    const binaryBytes = (body) => {
+        if (globalThis.Blob && body instanceof globalThis.Blob) {
+            return body._getBytes();
+        }
+
+        if (body instanceof ArrayBuffer) {
+            return new Uint8Array(body);
+        }
+
+        if (ArrayBuffer.isView(body)) {
+            return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+        }
+
+        return null;
+    };
+
     // A network error carries a status the constructor would otherwise refuse.
     const INTERNAL = Symbol('internal');
 
@@ -96,8 +114,8 @@
                 if (body._nativeStreamId !== undefined) {
                     this._nativeStreamId = body._nativeStreamId;
                 }
-            } else if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
-                const bytes = body instanceof Uint8Array ? body : new Uint8Array(body);
+            } else if (binaryBytes(body)) {
+                const bytes = binaryBytes(body);
                 this.body = new ReadableStream({
                     type: 'bytes',
                     start(controller) {

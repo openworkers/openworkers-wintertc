@@ -4,6 +4,24 @@
 (() => {
     'use strict';
 
+    // The bytes of a binary body: a Blob, an ArrayBuffer or any view of one.
+    // Anything else is not binary and becomes text.
+    const binaryBytes = (body) => {
+        if (globalThis.Blob && body instanceof globalThis.Blob) {
+            return body._getBytes();
+        }
+
+        if (body instanceof ArrayBuffer) {
+            return new Uint8Array(body);
+        }
+
+        if (ArrayBuffer.isView(body)) {
+            return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+        }
+
+        return null;
+    };
+
     // https://fetch.spec.whatwg.org/#concept-method
     const METHOD = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
@@ -112,8 +130,8 @@
         _initBody(body) {
             if (body instanceof ReadableStream) {
                 this.body = body;
-            } else if (body instanceof Uint8Array || body instanceof ArrayBuffer) {
-                const bytes = body instanceof Uint8Array ? body : new Uint8Array(body);
+            } else if (binaryBytes(body)) {
+                const bytes = binaryBytes(body);
                 this.body = new ReadableStream({
                     type: 'bytes',
                     start(controller) {
