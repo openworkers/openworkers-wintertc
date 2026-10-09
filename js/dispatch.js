@@ -16,7 +16,8 @@
 //   done      the answer and every waitUntil promise are settled
 //   streamed  the response body is out
 //
-// and disconnect() for a client that hung up.
+// with `marks`, how a fetch listener answered (see listenerResponse), and
+// disconnect() for a client that hung up.
 //
 // The handler is looked up when the event arrives, so a handler the script
 // declares through `export default` wins over one it registers through
@@ -65,11 +66,16 @@
 
     // The response a fetch listener gives: the one it passes to respondWith,
     // or else a Response it returns, directly or through a promise.
-    // respondWith may run at any time, from a timer or a callback included,
-    // so a listener that returns without either still has time to answer. A
-    // second respondWith throws and leaves the first response.
-    function listenerResponse(listener, request, life) {
+    // respondWith may run after the listener returns, from a timer, a
+    // callback or the code after an await, which the Service Worker spec and
+    // Cloudflare refuse. `marks` records it for the host: `late` when
+    // respondWith runs after the listener returned, `afterSettle` when an
+    // async listener's promise had settled before it. A second respondWith
+    // throws and leaves the first response.
+    function listenerResponse(listener, request, life, marks) {
         let answered = false;
+        let dispatching = true;
+        let settled = false;
         let answer;
         const response = new Promise((resolve) => {
             answer = (value) => {
@@ -86,6 +92,8 @@
                     throw new TypeError('respondWith was already called');
                 }
 
+                marks.late = !dispatching;
+                marks.afterSettle = settled;
                 answer(value);
             },
         };
@@ -98,13 +106,21 @@
             returned = Promise.reject(error);
         }
 
+        dispatching = false;
+
+        const isAsync = typeof returned?.then === 'function';
+
         Promise.resolve(returned).then(
             (value) => {
+                settled = isAsync;
+
                 if (!answered && value instanceof Response) {
                     answer(value);
                 }
             },
             (error) => {
+                settled = isAsync;
+
                 if (answered) {
                     console.error('[fetch] Handler error after respondWith:', error);
                 } else {
@@ -116,7 +132,7 @@
         return response;
     }
 
-    async function handlerResponse(request, life) {
+    async function handlerResponse(request, life, marks) {
         const module = moduleHandler('fetch');
 
         if (module) {
@@ -126,7 +142,7 @@
         }
 
         if (listeners.fetch) {
-            return listenerResponse(listeners.fetch, request, life);
+            return listenerResponse(listeners.fetch, request, life, marks);
         }
 
         return new Response('Worker does not implement fetch handler', { status: 501 });
@@ -134,6 +150,7 @@
 
     function fetch(request) {
         const life = lifetime();
+        const marks = { late: false, afterSettle: false };
         let ended;
         const streamed = new Promise((resolve) => {
             ended = resolve;
@@ -143,7 +160,7 @@
             let response;
 
             try {
-                response = await handlerResponse(request, life);
+                response = await handlerResponse(request, life, marks);
 
                 if (!(response instanceof Response)) {
                     throw new TypeError(
@@ -176,7 +193,7 @@
             response = value;
         });
 
-        return { answer, done, streamed, disconnect: () => engine.disconnect(response) };
+        return { answer, done, streamed, marks, disconnect: () => engine.disconnect(response) };
     }
 
     // A task result from what a task handler answers: an object with a

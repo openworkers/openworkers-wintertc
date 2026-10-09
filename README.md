@@ -69,7 +69,11 @@ calls it after the surface and before the guest script, with its engine's
 `streamBody(response, ended)` and `disconnect(response)`, and keeps the
 `{ fetch, task }` it answers. Each of these answers a handle whose `answer`,
 `done` and `streamed` promises always fulfil, so the host reads how far an
-event got from them and not from globals.
+event got from them and not from globals. A fetch handle also carries
+`marks`: `late` when a listener called `respondWith` after it returned, and
+`afterSettle` when an async listener had already ended then. The Service
+Worker spec refuses both; the dispatch accepts them and lets the host count
+them.
 
 ## Why a module reads its ops late
 

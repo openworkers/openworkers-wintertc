@@ -95,10 +95,21 @@ describe('fetch through addEventListener', () => {
         expect(await fetch(script)).toEqual([200, 'respondWith']);
     });
 
-    test('respondWith from a timer answers', async () => {
+    test('a plain listener answers with respondWith from a timer', async () => {
         const script = "addEventListener('fetch', e => { setTimeout(() => e.respondWith(new Response('late')), 5); });";
 
         expect(await fetch(script)).toEqual([200, 'late']);
+    });
+
+    test('an async listener answers with respondWith after an await', async () => {
+        const script = `
+            addEventListener('fetch', async (e) => {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                e.respondWith(new Response('after await'));
+            });
+        `;
+
+        expect(await fetch(script)).toEqual([200, 'after await']);
     });
 
     test('a second respondWith keeps the first response', async () => {
@@ -124,6 +135,60 @@ describe('fetch through addEventListener', () => {
 
     test('no handler answers 501', async () => {
         expect(await fetch('globalThis.nothing = 1;')).toEqual([501, 'Worker does not implement fetch handler']);
+    });
+});
+
+// The marks a fetch leaves on its handle once it has answered.
+async function marks(script) {
+    const { box, dispatch } = realm(script);
+    const handle = dispatch.fetch(new box.Request('http://localhost/'));
+    const response = await handle.answer;
+
+    await handle.done;
+
+    return [response.status, { ...handle.marks }];
+}
+
+describe('listener marks', () => {
+    test('respondWith during the listener leaves no mark', async () => {
+        expect(await marks("addEventListener('fetch', e => e.respondWith(new Response('now')));")).toEqual([
+            200,
+            { late: false, afterSettle: false },
+        ]);
+    });
+
+    test('respondWith after an await is late', async () => {
+        const script = `
+            addEventListener('fetch', async (e) => {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                e.respondWith(new Response('after await'));
+            });
+        `;
+
+        expect(await marks(script)).toEqual([200, { late: true, afterSettle: false }]);
+    });
+
+    test('respondWith from a timer in a plain listener is late', async () => {
+        const script = "addEventListener('fetch', e => { setTimeout(() => e.respondWith(new Response('timer')), 5); });";
+
+        expect(await marks(script)).toEqual([200, { late: true, afterSettle: false }]);
+    });
+
+    test('respondWith after an async listener ended is late and after settle', async () => {
+        const script = `
+            addEventListener('fetch', async (e) => {
+                new Promise((resolve) => setTimeout(resolve, 5)).then(() => e.respondWith(new Response('later')));
+            });
+        `;
+
+        expect(await marks(script)).toEqual([200, { late: true, afterSettle: true }]);
+    });
+
+    test('export default leaves no mark', async () => {
+        expect(await marks('globalThis.default = { async fetch() { return new Response("module"); } };')).toEqual([
+            200,
+            { late: false, afterSettle: false },
+        ]);
     });
 });
 
