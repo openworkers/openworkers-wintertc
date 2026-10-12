@@ -379,6 +379,75 @@ describe('fetch through export default', () => {
     });
 });
 
+describe('fetch on a target', () => {
+    // Serves one request with `make(box)` as the target.
+    async function fetchOn(script, make) {
+        const { box, dispatch } = realm(script);
+        const handle = dispatch.fetch(new box.Request('http://localhost/'), make(box));
+        const response = await handle.answer;
+
+        await handle.done;
+
+        return [response.status, await response.text()];
+    }
+
+    test('calls fetch with the request only, as a method of the target', async () => {
+        const script = `
+            globalThis.Counter = class {
+                name = 'counter';
+                fetch(...args) { return new Response(this.name + ' ' + args.length); }
+            };
+        `;
+
+        expect(await fetchOn(script, (box) => new box.Counter())).toEqual([200, 'counter 1']);
+    });
+
+    test('wins over the module and the listeners', async () => {
+        const script = `
+            globalThis.default = { fetch: () => new Response('module') };
+            addEventListener('fetch', e => e.respondWith(new Response('listener')));
+        `;
+        const make = (box) => runInContext("({ fetch: () => new Response('target') })", box);
+
+        expect(await fetchOn(script, make)).toEqual([200, 'target']);
+    });
+
+    test('a target without fetch answers 501, and no listener does', async () => {
+        const script = "addEventListener('fetch', e => e.respondWith(new Response('listener')));";
+
+        expect(await fetchOn(script, () => ({}))).toEqual([501, 'Durable Object does not implement fetch']);
+    });
+
+    test('a throw answers 500', async () => {
+        const make = () => ({
+            fetch() {
+                throw new Error('boom');
+            },
+        });
+
+        expect(await fetchOn('', make)).toEqual([500, 'Handler exception: boom']);
+    });
+
+    test('two requests in flight answer each their own', async () => {
+        const script = `
+            globalThis.Slow = class {
+                async fetch(request) {
+                    const wait = new URL(request.url).searchParams.get('wait');
+                    await new Promise((resolve) => setTimeout(resolve, Number(wait)));
+                    return new Response(wait);
+                }
+            };
+        `;
+        const { box, dispatch } = realm(script);
+        const instance = new box.Slow();
+        const slow = dispatch.fetch(new box.Request('http://localhost/?wait=20'), instance);
+        const fast = dispatch.fetch(new box.Request('http://localhost/?wait=1'), instance);
+
+        expect(await (await fast.answer).text()).toBe('1');
+        expect(await (await slow.answer).text()).toBe('20');
+    });
+});
+
 describe('the fetch handle', () => {
     test('done waits for waitUntil, after the answer', async () => {
         const { box, dispatch } = realm(`

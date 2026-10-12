@@ -22,6 +22,10 @@
 // endDispatch(), which the host calls after the microtask checkpoint that
 // follows its call, and disconnect() for a client that hung up.
 //
+// fetch(request, target) serves the request with target.fetch(request)
+// instead, as a Durable Object instance does: no listener and no module
+// handler answers for it.
+//
 // The handler is looked up when the event arrives, so a handler the script
 // declares through `export default` wins over one it registers through
 // addEventListener, whatever the order. Response is read when the host calls
@@ -68,16 +72,18 @@
 
     const errorMessage = (error) => (error && error.message) || String(error);
 
-    // The handler `export default` declares under `name`, called as a method
-    // of the module object.
-    function moduleHandler(name) {
-        const module = globalThis.default;
-
-        if (module === null || typeof module !== 'object' || typeof module[name] !== 'function') {
+    // The method `name` of `object`, called as a method of it.
+    function methodOf(object, name) {
+        if (object === null || typeof object !== 'object' || typeof object[name] !== 'function') {
             return null;
         }
 
-        return (...args) => module[name](...args);
+        return (...args) => object[name](...args);
+    }
+
+    // The handler `export default` declares under `name`.
+    function moduleHandler(name) {
+        return methodOf(globalThis.default, name);
     }
 
     // The promises an event passes to waitUntil, awaited after its answer.
@@ -215,9 +221,27 @@
 
     // What answers a fetch, and how the host ends its dispatch. Runs the
     // handler now, within the host's call.
-    function handlerResponse(request, life, marks) {
-        const module = moduleHandler('fetch');
+    function handlerResponse(request, life, marks, target) {
         const nothingToEnd = () => {};
+
+        if (target !== undefined) {
+            const method = methodOf(target, 'fetch');
+
+            if (!method) {
+                return {
+                    response: Promise.resolve(new Response('Durable Object does not implement fetch', { status: 501 })),
+                    endDispatch: nothingToEnd,
+                };
+            }
+
+            try {
+                return { response: Promise.resolve(method(request)), endDispatch: nothingToEnd };
+            } catch (error) {
+                return { response: Promise.reject(error), endDispatch: nothingToEnd };
+            }
+        }
+
+        const module = moduleHandler('fetch');
 
         if (module) {
             const ctx = { waitUntil: life.waitUntil, passThroughOnException() {} };
@@ -239,7 +263,7 @@
         };
     }
 
-    function fetch(request) {
+    function fetch(request, target) {
         const life = lifetime();
         const marks = { late: false, afterSettle: false };
         let ended;
@@ -247,7 +271,7 @@
             ended = resolve;
         });
 
-        const handled = handlerResponse(request, life, marks);
+        const handled = handlerResponse(request, life, marks, target);
 
         const answer = (async () => {
             let response;
